@@ -23,9 +23,47 @@ import (
 	"github.com/harness/harness-cli/pkg/cmdctx"
 	"github.com/harness/harness-cli/pkg/hbase"
 	"github.com/harness/harness-cli/pkg/hlog"
+	"github.com/harness/harness-cli/pkg/plugin"
 )
 
 var reReleaseVersion = regexp.MustCompile(`^v\d+\.\d+\.\d+$`)
+
+// cmpVersion compares two version strings (with or without "v" prefix).
+// Returns (-1|0|1, true) on valid semver input, or (0, false) if either is invalid.
+func cmpVersion(a, b string) (int, bool) {
+	av, bv := a, b
+	if !strings.HasPrefix(av, "v") {
+		av = "v" + av
+	}
+	if !strings.HasPrefix(bv, "v") {
+		bv = "v" + bv
+	}
+	if !semver.IsValid(av) || !semver.IsValid(bv) {
+		return 0, false
+	}
+	return semver.Compare(av, bv), true
+}
+
+// resolveVersion validates and normalizes a user-supplied version string,
+// or fetches the latest release when version is "" or "latest".
+func resolveVersion(version string) (string, error) {
+	if version != "" && version != "latest" {
+		if !strings.HasPrefix(version, "v") {
+			version = "v" + version
+		}
+		if !reReleaseVersion.MatchString(version) {
+			return "", fmt.Errorf("invalid version %q — expected vMAJOR.MINOR.PATCH (e.g. v1.2.3) or \"latest\"", version)
+		}
+		return version, nil
+	}
+	hlog.Debug("fetching latest release version")
+	v, err := fetchLatestVersion()
+	if err != nil {
+		return "", fmt.Errorf("fetching latest version: %w", err)
+	}
+	hlog.Debug("latest release", "version", v)
+	return v, nil
+}
 
 const (
 	installRepo       = "harness/harness-unified-cli"
@@ -49,26 +87,10 @@ func InstallCLIHandler(ctx *cmdctx.Ctx) error {
 	}
 	installDir = hbase.ExpandHomeDir(installDir)
 
-	if version != "" && version != "latest" {
-		v := version
-		if !strings.HasPrefix(v, "v") {
-			v = "v" + v
-		}
-		if !reReleaseVersion.MatchString(v) {
-			return fmt.Errorf("invalid version %q — expected vMAJOR.MINOR.PATCH (e.g. v1.2.3) or \"latest\"", version)
-		}
-		// normalize to v-prefix
-		version = v
-	}
-
-	if version == "" || version == "latest" {
-		hlog.Debug("fetching latest release version")
-		v, err := fetchLatestVersion()
-		if err != nil {
-			return fmt.Errorf("fetching latest version: %w", err)
-		}
-		version = v
-		hlog.Debug("latest release", "version", version)
+	var err error
+	version, err = resolveVersion(version)
+	if err != nil {
+		return err
 	}
 
 	platform, err := detectPlatform()
@@ -78,7 +100,7 @@ func InstallCLIHandler(ctx *cmdctx.Ctx) error {
 	hlog.Debug("platform detected", "platform", platform)
 
 	if check {
-		exists, err := releaseExists(version, platform)
+		exists, err := releaseAssetExists(version, platform, installBundleName)
 		if err != nil {
 			return err
 		}
@@ -87,36 +109,25 @@ func InstallCLIHandler(ctx *cmdctx.Ctx) error {
 			os.Exit(1)
 		}
 		current := hbase.Version
-		cv := current
-		if !strings.HasPrefix(cv, "v") {
-			cv = "v" + cv
-		}
-		lv := version
-		if !strings.HasPrefix(lv, "v") {
-			lv = "v" + lv
-		}
-		if semver.IsValid(cv) && semver.IsValid(lv) && semver.Compare(lv, cv) <= 0 {
-			fmt.Printf("Version %s is available (already up to date, current: %s)\n", version, current)
-		} else {
+		cmp, ok := cmpVersion(version, current)
+		if !ok || cmp > 0 {
 			fmt.Printf("Version %s is available (upgrade from %s)\n", version, current)
+		} else if cmp < 0 {
+			fmt.Printf("Version %s is available (current %s is ahead)\n", version, current)
+		} else {
+			fmt.Printf("Version %s is available (already up to date, current: %s)\n", version, current)
 		}
 		return nil
 	}
 
 	if !force {
 		current := hbase.Version
-		// normalize both to v-prefixed for semver comparison
-		cv := current
-		if !strings.HasPrefix(cv, "v") {
-			cv = "v" + cv
-		}
-		lv := version
-		if !strings.HasPrefix(lv, "v") {
-			lv = "v" + lv
-		}
-		hlog.Debug("version check", "current", cv, "latest", lv)
-		if semver.IsValid(cv) && semver.IsValid(lv) && semver.Compare(lv, cv) <= 0 {
-			fmt.Printf("Already up to date (current: %s, latest: %s). Use --force to reinstall.\n", current, version)
+		if cmp, ok := cmpVersion(version, current); ok && cmp <= 0 {
+			if cmp < 0 {
+				fmt.Printf("Current version %s is ahead of latest release %s. Use --force to reinstall.\n", current, version)
+			} else {
+				fmt.Printf("Already up to date (current: %s, latest: %s). Use --force to reinstall.\n", current, version)
+			}
 			return nil
 		}
 	}
@@ -126,7 +137,7 @@ func InstallCLIHandler(ctx *cmdctx.Ctx) error {
 	}
 
 	hlog.Info("downloading", "version", version, "platform", platform)
-	if err := downloadAndInstall(version, platform, installDir); err != nil {
+	if err := downloadAndInstallBinary(version, platform, installDir, installBundleName, installBinaryName); err != nil {
 		return err
 	}
 
@@ -158,31 +169,17 @@ func InstallModuleHandler(ctx *cmdctx.Ctx) error {
 	}
 	installDir = hbase.ExpandHomeDir(installDir)
 
-	if version != "" && version != "latest" {
-		v := version
-		if !strings.HasPrefix(v, "v") {
-			v = "v" + v
-		}
-		if !reReleaseVersion.MatchString(v) {
-			return fmt.Errorf("invalid version %q — expected vMAJOR.MINOR.PATCH (e.g. v1.2.3) or \"latest\"", version)
-		}
-		version = v
-	}
-
-	if version == "" || version == "latest" {
-		hlog.Debug("fetching latest release version")
-		v, err := fetchLatestVersion()
-		if err != nil {
-			return fmt.Errorf("fetching latest version: %w", err)
-		}
-		version = v
-		hlog.Debug("latest release", "version", version)
+	var err error
+	version, err = resolveVersion(version)
+	if err != nil {
+		return err
 	}
 
 	platform, err := detectPlatform()
 	if err != nil {
 		return err
 	}
+	hlog.Debug("platform detected", "platform", platform)
 
 	pkgName := fmt.Sprintf("harness-plugin-%s", moduleName)
 
@@ -195,24 +192,35 @@ func InstallModuleHandler(ctx *cmdctx.Ctx) error {
 			fmt.Printf("Version %s of module %s not found\n", version, moduleName)
 			os.Exit(1)
 		}
+		if binPath, err := plugin.FindBinary(binaryName); err == nil {
+			installed := plugin.QueryVersion(binPath)
+			if cmp, ok := cmpVersion(version, installed); ok {
+				if cmp > 0 {
+					fmt.Printf("Version %s of module %s is available (upgrade from %s)\n", version, moduleName, installed)
+				} else if cmp < 0 {
+					fmt.Printf("Version %s of module %s is available (current %s is ahead)\n", version, moduleName, installed)
+				} else {
+					fmt.Printf("Version %s of module %s is available (already up to date, current: %s)\n", version, moduleName, installed)
+				}
+				return nil
+			}
+		}
 		fmt.Printf("Version %s of module %s is available\n", version, moduleName)
 		return nil
 	}
 
 	if !force {
-		existing, err := os.Executable()
-		if err == nil {
-			dir := filepath.Dir(existing)
-			candidate := filepath.Join(dir, binaryName)
-			if _, err := os.Stat(candidate); err == nil {
-				fmt.Printf("Module %s is already installed at %s. Use --force to reinstall.\n", moduleName, candidate)
+		if binPath, err := plugin.FindBinary(binaryName); err == nil {
+			installed := plugin.QueryVersion(binPath)
+			if cmp, ok := cmpVersion(version, installed); ok && cmp <= 0 {
+				fmt.Printf("Module %s is already installed at %s (installed: %s, latest: %s).\n", moduleName, binPath, installed, version)
+				if cmp < 0 {
+					fmt.Printf("Installed version is ahead of latest release. Use --force to reinstall.\n")
+				} else {
+					fmt.Printf("Already at latest version. Use --force to reinstall.\n")
+				}
 				return nil
 			}
-		}
-		candidate := filepath.Join(installDir, binaryName)
-		if _, err := os.Stat(candidate); err == nil {
-			fmt.Printf("Module %s is already installed at %s. Use --force to reinstall.\n", moduleName, candidate)
-			return nil
 		}
 	}
 
@@ -221,7 +229,7 @@ func InstallModuleHandler(ctx *cmdctx.Ctx) error {
 	}
 
 	hlog.Info("downloading module", "module", moduleName, "version", version, "platform", platform)
-	if err := downloadAndInstallModule(version, platform, installDir, pkgName, binaryName); err != nil {
+	if err := downloadAndInstallBinary(version, platform, installDir, pkgName, binaryName); err != nil {
 		return err
 	}
 
@@ -278,79 +286,7 @@ func detectPlatform() (string, error) {
 	return os_ + "_" + arch, nil
 }
 
-func downloadAndInstall(version, platform, destDir string) error {
-	ver := strings.TrimPrefix(version, "v")
-	base := fmt.Sprintf("%s_%s_%s", installBundleName, ver, platform)
-	tarURL := fmt.Sprintf("https://github.com/%s/releases/download/%s/%s.tar.gz", installRepo, version, base)
-	checksumURL := fmt.Sprintf("https://github.com/%s/releases/download/%s/harness_%s_checksums.txt", installRepo, version, ver)
-
-	tmp, err := os.MkdirTemp("", "harness-install-*")
-	if err != nil {
-		return fmt.Errorf("creating temp dir: %w", err)
-	}
-	defer os.RemoveAll(tmp)
-
-	archivePath := filepath.Join(tmp, base+".tar.gz")
-	if err := downloadFile(archivePath, tarURL); err != nil {
-		if strings.Contains(err.Error(), "HTTP 404") {
-			return fmt.Errorf("release %s not found — check the version with: harness install cli %s --check", version, version)
-		}
-		return fmt.Errorf("downloading release: %w", err)
-	}
-
-	hlog.Debug("verifying checksum")
-	if err := verifyChecksum(archivePath, base+".tar.gz", checksumURL); err != nil {
-		return fmt.Errorf("checksum verification failed: %w", err)
-	}
-
-	binaryPath := filepath.Join(tmp, installBinaryName)
-	if err := extractBinaryFromTar(archivePath, installBinaryName, binaryPath); err != nil {
-		return fmt.Errorf("extracting binary: %w", err)
-	}
-
-	dest := filepath.Join(destDir, installBinaryName)
-	staging := dest + ".new"
-	if err := os.Rename(binaryPath, staging); err != nil {
-		return fmt.Errorf("staging binary: %w", err)
-	}
-	if err := os.Chmod(staging, 0755); err != nil {
-		os.Remove(staging)
-		return fmt.Errorf("setting permissions: %w", err)
-	}
-	if err := os.Rename(staging, dest); err != nil {
-		os.Remove(staging)
-		return fmt.Errorf("installing binary: %w", err)
-	}
-	return nil
-}
-
-func releaseExists(version, platform string) (bool, error) {
-	ver := strings.TrimPrefix(version, "v")
-	base := fmt.Sprintf("%s_%s_%s", installBundleName, ver, platform)
-	url := fmt.Sprintf("https://github.com/%s/releases/download/%s/%s.tar.gz", installRepo, version, base)
-	client := &http.Client{Timeout: 15 * time.Second}
-	resp, err := client.Head(url)
-	if err != nil {
-		return false, fmt.Errorf("checking release: %w", err)
-	}
-	resp.Body.Close()
-	return resp.StatusCode == http.StatusOK, nil
-}
-
-func releaseAssetExists(version, platform, pkgName string) (bool, error) {
-	ver := strings.TrimPrefix(version, "v")
-	base := fmt.Sprintf("%s_%s_%s", pkgName, ver, platform)
-	url := fmt.Sprintf("https://github.com/%s/releases/download/%s/%s.tar.gz", installRepo, version, base)
-	client := &http.Client{Timeout: 15 * time.Second}
-	resp, err := client.Head(url)
-	if err != nil {
-		return false, fmt.Errorf("checking release: %w", err)
-	}
-	resp.Body.Close()
-	return resp.StatusCode == http.StatusOK, nil
-}
-
-func downloadAndInstallModule(version, platform, destDir, pkgName, binaryName string) error {
+func downloadAndInstallBinary(version, platform, destDir, pkgName, binaryName string) error {
 	ver := strings.TrimPrefix(version, "v")
 	base := fmt.Sprintf("%s_%s_%s", pkgName, ver, platform)
 	tarURL := fmt.Sprintf("https://github.com/%s/releases/download/%s/%s.tar.gz", installRepo, version, base)
@@ -365,7 +301,7 @@ func downloadAndInstallModule(version, platform, destDir, pkgName, binaryName st
 	archivePath := filepath.Join(tmp, base+".tar.gz")
 	if err := downloadFile(archivePath, tarURL); err != nil {
 		if strings.Contains(err.Error(), "HTTP 404") {
-			return fmt.Errorf("module %s release %s not found", pkgName, version)
+			return fmt.Errorf("%s %s not found", pkgName, version)
 		}
 		return fmt.Errorf("downloading release: %w", err)
 	}
@@ -394,6 +330,19 @@ func downloadAndInstallModule(version, platform, destDir, pkgName, binaryName st
 		return fmt.Errorf("installing binary: %w", err)
 	}
 	return nil
+}
+
+func releaseAssetExists(version, platform, pkgName string) (bool, error) {
+	ver := strings.TrimPrefix(version, "v")
+	base := fmt.Sprintf("%s_%s_%s", pkgName, ver, platform)
+	url := fmt.Sprintf("https://github.com/%s/releases/download/%s/%s.tar.gz", installRepo, version, base)
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Head(url)
+	if err != nil {
+		return false, fmt.Errorf("checking release: %w", err)
+	}
+	resp.Body.Close()
+	return resp.StatusCode == http.StatusOK, nil
 }
 
 func downloadFile(dest, url string) error {
