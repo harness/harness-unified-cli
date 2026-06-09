@@ -132,20 +132,29 @@ func parseProvidedId(id string, totalSteps int) (doneParts []string, allDone boo
 }
 
 // buildPickerCtx builds a list-scoped ctx from the get ctx, inheriting auth and level.
+// If the list spec declares a --search flag, it is seeded into FlagValues so the picker
+// TUI enables "/" search.
 func buildPickerCtx(getCtx *cmdctx.Ctx, listCs *spec.CommandSpec) *cmdctx.Ctx {
 	goCtx, cancel := getCtx.Context, getCtx.CancelFn
+	fv := map[string]any{}
+	for _, f := range listCs.Flags {
+		if f.Name == "search" {
+			fv["search"] = ""
+			break
+		}
+	}
 	return &cmdctx.Ctx{
-		Context:    goCtx,
-		CancelFn:   cancel,
-		Auth:       getCtx.Auth,
-		Verb:       listCs.Verb,
+		Context:     goCtx,
+		CancelFn:    cancel,
+		Auth:        getCtx.Auth,
+		Verb:        listCs.Verb,
 		VerbHandler: listCs.VerbHandler,
-		Noun:       listCs.Noun,
-		FieldsNoun: listCs.FieldsNoun,
-		Level:      getCtx.Level,
-		IsPty:      getCtx.IsPty,
-		Resolver:   getCtx.Resolver,
+		Noun:        listCs.Noun,
+		FieldsNoun:  listCs.FieldsNoun,
+		Level:       getCtx.Level,
+		IsPty:       getCtx.IsPty,
+		Resolver:    getCtx.Resolver,
 		FormatFlags: cmdctx.FormatFlags{},
-		FlagValues: map[string]any{},
+		FlagValues:  fv,
 	}
 }
