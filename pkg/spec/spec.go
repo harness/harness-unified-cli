@@ -124,6 +124,9 @@ type NounDef struct {
 	// MultiLevel indicates the noun can exist at account, org, or project scope.
 	// Set explicitly in the spec YAML on nouns that support --level.
 	MultiLevel bool `yaml:"multi_level,omitempty"`
+	// NounAliases lists alternate names for this noun (e.g. "org", "orgs" for "organization").
+	// Alias commands are wired up as hidden cobra commands and do not appear in help output.
+	NounAliases []string `yaml:"noun_aliases,omitempty"`
 }
 
 // FieldDef defines a named, reusable field for a noun. Fields declared here can be

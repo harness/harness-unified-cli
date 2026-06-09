@@ -23,6 +23,7 @@ nouns:
 
   - noun: module
     short_desc: A CLI module grouping related nouns and commands.
+    noun_aliases: [modules]
     fields:
       - id: module
         expr: it["module"]
@@ -38,6 +39,7 @@ nouns:
 
   - noun: noun
     short_desc: A CLI noun (resource type) with its supported verbs and module.
+    noun_aliases: [nouns]
     fields:
       - id: noun
         expr: it["noun"]

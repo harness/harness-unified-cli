@@ -5,6 +5,7 @@ module_desc: Infrastructure as Code Management (workspaces, resources)
 nouns:
   - noun: workspace
     short_desc: An IACM workspace that manages Terraform/OpenTofu infrastructure state.
+    noun_aliases: [workspaces]
     url_path: /ng/account/{{auth.account}}/module/iacm/orgs/{{auth.org}}/projects/{{auth.project}}/workspaces/{{it.identifier}}
     fields:
       - id: identifier

@@ -5,6 +5,7 @@ module_desc: Pipeline execution, logs, and step management
 nouns:
   - noun: pipeline
     short_desc: A CI/CD pipeline definition with stages, steps, and trigger configuration.
+    noun_aliases: [pipelines]
     url_path: /ng/account/{{auth.account}}/all/orgs/{{auth.org}}/projects/{{auth.project}}/pipelines/{{it.identifier}}
     fields:
       - id: identifier
@@ -42,6 +43,7 @@ nouns:
 
   - noun: execution
     short_desc: A single pipeline run instance with status, timing, and trigger info.
+    noun_aliases: [executions]
     url_path: "/ng/account/{{auth.account}}/all/orgs/{{auth.org}}/projects/{{auth.project}}/pipelines/{{'pipelineExecutionSummary' in it ? it.pipelineExecutionSummary.pipelineIdentifier : it.pipelineIdentifier}}/deployments/{{'pipelineExecutionSummary' in it ? it.pipelineExecutionSummary.planExecutionId : it.planExecutionId}}/pipeline"
     fields:
       - id: id
@@ -71,6 +73,7 @@ nouns:
 
   - noun: trigger
     short_desc: An event-based trigger that automatically starts a pipeline.
+    noun_aliases: [triggers]
     fields:
       - id: identifier
         expr: it.identifier
@@ -83,6 +86,7 @@ nouns:
 
   - noun: input_set
     short_desc: A reusable set of runtime inputs that can be applied when running a pipeline.
+    noun_aliases: [input_sets]
     fields:
       - id: identifier
         expr: it.identifier
@@ -102,6 +106,7 @@ nouns:
 
   - noun: template
     short_desc: A reusable pipeline template for stages, steps, or full pipelines.
+    noun_aliases: [templates]
     fields:
       - id: identifier
         expr: it.identifier
@@ -154,6 +159,7 @@ nouns:
 
   - noun: approval_instance
     short_desc: A pending or resolved manual approval step within a pipeline execution.
+    noun_aliases: [approval_instances]
     fields:
       - id: id
         label: ID
@@ -167,6 +173,7 @@ nouns:
 
   - noun: freeze_window
     short_desc: A scheduled deployment freeze window that blocks pipeline executions.
+    noun_aliases: [freeze_windows]
     multi_level: true
     fields:
       - id: identifier

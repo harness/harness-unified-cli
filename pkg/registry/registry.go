@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/pflag"
 
 	"github.com/harness/harness-cli/pkg/auth"
+	"github.com/harness/harness-cli/pkg/strutil"
 	"github.com/harness/harness-cli/pkg/cmdctx"
 	"github.com/harness/harness-cli/pkg/console"
 	"github.com/harness/harness-cli/pkg/exprenv"
@@ -46,6 +47,7 @@ type Registry struct {
 	IsMainBinary      bool // when true, commands owned by external modules are exec'd to their plugin binary
 	specs             map[string][]*spec.CommandSpec
 	nouns             map[string]spec.NounDef
+	nounAliases       map[string]string // alias name → canonical noun name
 	moduleMetas       []spec.ModuleMeta
 	workflows         map[string]WorkflowFn
 	textFormatters    map[string]cmdctx.TextFormatterFn
@@ -61,6 +63,7 @@ func New() *Registry {
 		StrictYAML:        os.Getenv(hbase.EnvCheckSpecs) == "1",
 		specs:             map[string][]*spec.CommandSpec{},
 		nouns:             map[string]spec.NounDef{},
+		nounAliases:       map[string]string{},
 		workflows:         map[string]WorkflowFn{},
 		textFormatters:    map[string]cmdctx.TextFormatterFn{},
 		bodyFns:           map[string]cmdctx.CreateBodyFn{},
@@ -159,8 +162,32 @@ func (r *Registry) RegisterNoun(nd spec.NounDef) error {
 			return fmt.Errorf("noun %q: %w", nd.Noun, err)
 		}
 	}
+	for _, alias := range nd.NounAliases {
+		if _, exists := r.nouns[alias]; exists {
+			return fmt.Errorf("noun %q: alias %q conflicts with existing noun (module %q)", nd.Noun, alias, r.moduleForNoun(alias))
+		}
+		if owner, exists := r.nounAliases[alias]; exists {
+			return fmt.Errorf("noun %q: alias %q already claimed by noun %q (module %q)", nd.Noun, alias, owner, r.moduleForNoun(owner))
+		}
+	}
 	r.nouns[nd.Noun] = nd
+	for _, alias := range nd.NounAliases {
+		r.nounAliases[alias] = nd.Noun
+	}
 	return nil
+}
+
+// moduleForNoun returns the module name that owns the given noun, or "unknown" if not found.
+// Used only in error paths; walks all registered specs.
+func (r *Registry) moduleForNoun(noun string) string {
+	for _, specs := range r.specs {
+		for _, cs := range specs {
+			if cs.Noun == noun && cs.Module != "" {
+				return cs.Module
+			}
+		}
+	}
+	return "unknown"
 }
 
 // GetNoun returns the NounDef for a noun, or nil if not registered.
@@ -296,6 +323,12 @@ func (r *Registry) BuildCommands() []*cobra.Command {
 		}
 		for _, cs := range specs {
 			verbCmds[verb].AddCommand(r.buildCmd(cs))
+			nd := r.GetNoun(cs.Noun)
+			if nd != nil {
+				for _, alias := range nd.NounAliases {
+					verbCmds[verb].AddCommand(r.buildAliasCmd(cs, alias))
+				}
+			}
 		}
 	}
 
@@ -333,12 +366,29 @@ func (r *Registry) buildVerbCommands() map[string]*cobra.Command {
 						return cmd.Help()
 					}
 					noun := args[0]
-					known := make([]string, 0, len(r.specs[verbCopy]))
-					for _, cs := range r.specs[verbCopy] {
-						known = append(known, cs.FullNoun())
+					msg := fmt.Sprintf("%q is not a valid noun for %q", noun, string(verbCopy))
+					seen := map[string]bool{}
+					var suggestions []string
+					addSuggestion := func(canonical string) {
+						if !seen[canonical] {
+							seen[canonical] = true
+							suggestions = append(suggestions, canonical)
+						}
 					}
-					return fmt.Errorf("%q is not a valid noun for %q\n\nAvailable nouns: %s",
-						noun, string(verbCopy), strings.Join(known, ", "))
+					for _, cs := range r.specs[verbCopy] {
+						if strutil.Levenshtein(noun, cs.FullNoun()) <= 3 {
+							addSuggestion(cs.FullNoun())
+						}
+					}
+					for alias, canonical := range r.nounAliases {
+						if strutil.Levenshtein(noun, alias) <= 3 {
+							addSuggestion(canonical)
+						}
+					}
+					if len(suggestions) > 0 {
+						msg += "\n\nDid you mean: " + strings.Join(suggestions, ", ") + "?"
+					}
+					return errors.New(msg)
 				},
 			}
 		}
@@ -444,6 +494,57 @@ func (r *Registry) buildCmd(cs *spec.CommandSpec) *cobra.Command {
 		Hidden: cs.Hidden,
 	}
 
+	r.bindHandler(cmd, cs)
+	nd := r.GetNoun(cs.Noun)
+	isMultiLevelList := vspec.AllowsParentId && nd != nil && nd.MultiLevel
+	if vspec.RequiresId || (vspec.AllowsParentId && (cs.CompletionNoun != "" || len(cs.CompletionSeq) > 0)) || isMultiLevelList {
+		r.wireCompletion(cmd, cs)
+	}
+	r.wireFlagCompletions(cmd, cs)
+	return cmd
+}
+
+// buildAliasCmd constructs a hidden cobra.Command that delegates to the same handler as cs
+// but uses aliasNoun as the subcommand name. Alias commands are hidden from help output.
+func (r *Registry) buildAliasCmd(cs *spec.CommandSpec, aliasNoun string) *cobra.Command {
+	vspec := verbRegistry[cs.Verb]
+	use := aliasNoun
+	if vspec.RequiresId && !cs.NoId {
+		idLabel := "<id>"
+		if cs.IdLabel != "" {
+			idLabel = cs.IdLabel
+		}
+		use += " " + idLabel
+		if cs.HasArgs && cs.ArgsLabel != "" {
+			use += " " + cs.ArgsLabel
+		}
+	} else if vspec.AllowsId {
+		idLabel := "id"
+		if cs.IdLabel != "" {
+			idLabel = cs.IdLabel
+		}
+		use += " [" + idLabel + "]"
+	} else if vspec.AllowsParentId {
+		if cs.RequiresParentId {
+			parentIdLabel := "<parentid>"
+			if cs.ParentIdLabel != "" {
+				parentIdLabel = cs.ParentIdLabel
+			}
+			use += " " + parentIdLabel
+		} else {
+			parentIdLabel := "[parentid]"
+			if cs.ParentIdLabel != "" {
+				parentIdLabel = "[" + cs.ParentIdLabel + "]"
+			}
+			use += " " + parentIdLabel
+		}
+	}
+	cmd := &cobra.Command{
+		Use:    use,
+		Short:  cs.Short,
+		Long:   cs.Long,
+		Hidden: true,
+	}
 	r.bindHandler(cmd, cs)
 	nd := r.GetNoun(cs.Noun)
 	isMultiLevelList := vspec.AllowsParentId && nd != nil && nd.MultiLevel

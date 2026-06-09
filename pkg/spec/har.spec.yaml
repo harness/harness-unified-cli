@@ -6,6 +6,7 @@ external_binary: harness-har
 nouns:
   - noun: registry
     short_desc: A Harness Artifact Registry that stores and proxies packages.
+    noun_aliases: [registries]
     multi_level: true
     url_path: /ng/account/{{auth.account}}/module/har{{harScopeUrl(auth)}}/registries/{{it.identifier}}
     fields:
@@ -57,6 +58,7 @@ nouns:
 
   - noun: artifact
     short_desc: A versioned package stored in a Harness artifact registry.
+    noun_aliases: [artifacts]
     multi_level: true
     fields:
       - id: name

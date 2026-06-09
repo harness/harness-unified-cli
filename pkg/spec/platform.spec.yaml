@@ -5,6 +5,7 @@ module_desc: Core platform resources (orgs, projects, users, connectors, delegat
 nouns:
   - noun: account
     short_desc: The top-level Harness account entity with billing, auth, and cluster configuration.
+    noun_aliases: [accounts]
     fields:
       - id: identifier
         expr: it.identifier
@@ -55,6 +56,7 @@ nouns:
 
   - noun: organization
     short_desc: A top-level organizational unit that groups projects within an account.
+    noun_aliases: [org, orgs, organizations]
     fields:
       - id: identifier
         expr: it.identifier
@@ -69,6 +71,7 @@ nouns:
 
   - noun: project
     short_desc: A scoped workspace within an org where pipelines, connectors, and secrets live.
+    noun_aliases: [projects]
     multi_level: true
     url_path: /ng/account/{{auth.account}}/all/orgs/{{it.project.orgIdentifier}}/projects/{{it.project.identifier}}/overview
     fields:
@@ -107,6 +110,7 @@ nouns:
 
   - noun: user
     short_desc: A Harness user account with roles, 2FA state, and lock/disable status.
+    noun_aliases: [users]
     multi_level: true
     fields:
       - id: uuid
@@ -133,6 +137,7 @@ nouns:
 
   - noun: user_group
     short_desc: A named group of users used to assign roles and SSO mappings in bulk.
+    noun_aliases: [user_groups]
     multi_level: true
     fields:
       - id: identifier
@@ -162,6 +167,7 @@ nouns:
 
   - noun: service_account
     short_desc: A non-human identity used by applications or pipelines to authenticate with Harness.
+    noun_aliases: [service_accounts]
     multi_level: true
     fields:
       - id: identifier
@@ -183,6 +189,7 @@ nouns:
 
   - noun: role
     short_desc: A named set of permissions that can be assigned to users or groups.
+    noun_aliases: [roles]
     multi_level: true
     fields:
       - id: identifier
@@ -210,6 +217,7 @@ nouns:
 
   - noun: role_assignment
     short_desc: A binding that grants a role and resource group to a principal (user, group, or service account).
+    noun_aliases: [role_assignments]
     multi_level: true
     fields:
       - id: identifier
@@ -237,6 +245,7 @@ nouns:
 
   - noun: resource_group
     short_desc: A collection of resources (pipelines, connectors, etc.) that scopes a role assignment.
+    noun_aliases: [resource_groups]
     multi_level: true
     fields:
       - id: identifier
@@ -258,6 +267,7 @@ nouns:
 
   - noun: permission
     short_desc: A granular action allowed on a resource type, used to build roles.
+    noun_aliases: [permissions]
     fields:
       - id: identifier
         expr: it.permission.identifier
@@ -276,6 +286,7 @@ nouns:
 
   - noun: setting
     short_desc: A configurable platform option with a value, type, and inheritance scope.
+    noun_aliases: [settings]
     multi_level: true
     fields:
       - id: identifier
@@ -311,6 +322,7 @@ nouns:
 
   - noun: connector
     short_desc: An integration that connects Harness to an external service (cloud, repo, registry, etc.).
+    noun_aliases: [connectors]
     multi_level: true
     fields:
       - id: identifier
@@ -322,6 +334,7 @@ nouns:
 
   - noun: delegate
     short_desc: An agent installed in your infrastructure that executes pipeline tasks on Harness's behalf.
+    noun_aliases: [delegates]
     multi_level: true
     fields:
       - id: identifier
@@ -337,6 +350,7 @@ nouns:
 
   - noun: secret
     short_desc: An encrypted credential or sensitive value stored in a secrets manager.
+    noun_aliases: [secrets]
     multi_level: true
     fields:
       - id: identifier
