@@ -44,6 +44,10 @@ func BuildRequest(ctx *cmdctx.Ctx, ep *spec.EndpointSpec) (*client.Request, erro
 		copy.ProjectID = ""
 		a = &copy
 	}
+	origAuth := ctx.Auth
+	ctx.Auth = a
+	defer func() { ctx.Auth = origAuth }()
+
 	exprEnv := exprenv.Make(ctx)
 	path, err := exprenv.ResolvePath(exprEnv, ep.Path)
 	if err != nil {

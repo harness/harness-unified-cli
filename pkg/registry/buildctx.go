@@ -35,6 +35,26 @@ func runTimeout(secs float64, cancel context.CancelCauseFunc) {
 	os.Exit(hbase.TimeoutExitCode)
 }
 
+// parseScopePrefix inspects a raw id/parentId arg and returns the stripped value
+// and the detected scope level. For list verbs, bare "account" / "org" are valid
+// sentinels (returns "", level). For all other verbs a prefix is required to set
+// a non-default level — bare "account"/"org" are treated as literal ids.
+func parseScopePrefix(raw string, isList bool) (stripped string, level string) {
+	if strings.HasPrefix(raw, "account.") {
+		return strings.TrimPrefix(raw, "account."), "account"
+	}
+	if strings.HasPrefix(raw, "org.") {
+		return strings.TrimPrefix(raw, "org."), "org"
+	}
+	if isList && raw == "account" {
+		return "", "account"
+	}
+	if isList && raw == "org" {
+		return "", "org"
+	}
+	return raw, "project"
+}
+
 // buildCompletionCtx constructs the Ctx needed for completion handlers.
 // It resolves auth from the command's --profile/--org/--project flags.
 // parentId is optional — pass "" when not applicable.
@@ -50,12 +70,29 @@ func (r *Registry) buildCompletionCtx(cmd *cobra.Command, verb, noun, parentId s
 	resolved.ProjectID = firstNonEmpty(projectFlag, resolved.ProjectID)
 	ctx, cancel := context.WithCancelCause(context.Background())
 	go runTimeout(completionTimeout, cancel)
+
+	level := ""
+	nd := r.GetNoun(noun)
+	if nd != nil && nd.MultiLevel {
+		if parentId != "" {
+			parentId, level = parseScopePrefix(parentId, true)
+		}
+		if levelFlag, _ := cmd.Flags().GetString("level"); levelFlag != "" {
+			if level != "" && level != "project" && level != levelFlag {
+				// prefix and --level disagree — return an error so callers can bail on completions
+				return nil, fmt.Errorf("--level %q conflicts with %q prefix", levelFlag, level)
+			}
+			level = levelFlag
+		}
+	}
+
 	return &cmdctx.Ctx{
 		Context:  ctx,
 		CancelFn: cancel,
 		Verb:     verb,
 		Noun:     noun,
 		ParentId: parentId,
+		Level:    level,
 		Auth:     resolved,
 		Resolver: r,
 	}, nil
@@ -111,6 +148,7 @@ func buildCtx(cmd *cobra.Command, cs *spec.CommandSpec, args []string, r *Regist
 		idLabel = "<id>"
 	}
 	vspec := verbRegistry[cs.Verb]
+	nd := r.GetNoun(cs.Noun)
 	if vspec.RequiresId && !cs.NoId {
 		if len(args) == 0 && !skipIdCheck {
 			return nil, fmt.Errorf("%s %s requires a positional %s argument", cs.Verb, cs.Noun, idLabel)
@@ -134,6 +172,29 @@ func buildCtx(cmd *cobra.Command, cs *spec.CommandSpec, args []string, r *Regist
 				label = "<parentid>"
 			}
 			return nil, fmt.Errorf("%s %s requires a positional %s argument", cs.Verb, cs.Noun, label)
+		}
+	}
+	if nd != nil && nd.MultiLevel {
+		if vspec.AllowsParentId && ctx.ParentId != "" {
+			ctx.ParentId, ctx.Level = parseScopePrefix(ctx.ParentId, true)
+		} else if ctx.Id != "" {
+			ctx.Id, ctx.Level = parseScopePrefix(ctx.Id, false)
+		}
+		if levelFlag, _ := cmd.Flags().GetString("level"); levelFlag != "" {
+			valid := false
+			for _, v := range specLevelValues {
+				if levelFlag == v {
+					valid = true
+					break
+				}
+			}
+			if !valid {
+				return nil, fmt.Errorf("invalid --level %q: must be one of %s", levelFlag, strings.Join(specLevelValues, ", "))
+			}
+			if ctx.Level != "" && ctx.Level != "project" && ctx.Level != levelFlag {
+				return nil, fmt.Errorf("--level %q conflicts with %q prefix on id", levelFlag, ctx.Level)
+			}
+			ctx.Level = levelFlag
 		}
 	}
 	if err := validateIdParts(cs, vspec, ctx); err != nil {
@@ -190,20 +251,6 @@ func buildCtx(cmd *cobra.Command, cs *spec.CommandSpec, args []string, r *Regist
 		if len(delVals) > 0 {
 			ctx.DelArgs = delVals
 		}
-	}
-	if cs.BuiltinFlags.Level {
-		level, _ := cmd.Flags().GetString("level")
-		valid := false
-		for _, v := range specLevelValues {
-			if level == v {
-				valid = true
-				break
-			}
-		}
-		if !valid {
-			return nil, fmt.Errorf("invalid --level %q: must be one of %s", level, strings.Join(specLevelValues, ", "))
-		}
-		ctx.Level = level
 	}
 	ctx.FlagValues = buildFlagValues(cmd.Flags(), cs)
 	ctx.Resolver = r

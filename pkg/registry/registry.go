@@ -445,7 +445,9 @@ func (r *Registry) buildCmd(cs *spec.CommandSpec) *cobra.Command {
 	}
 
 	r.bindHandler(cmd, cs)
-	if vspec.RequiresId || (vspec.AllowsParentId && (cs.CompletionNoun != "" || len(cs.CompletionSeq) > 0)) {
+	nd := r.GetNoun(cs.Noun)
+	isMultiLevelList := vspec.AllowsParentId && nd != nil && nd.MultiLevel
+	if vspec.RequiresId || (vspec.AllowsParentId && (cs.CompletionNoun != "" || len(cs.CompletionSeq) > 0)) || isMultiLevelList {
 		r.wireCompletion(cmd, cs)
 	}
 	r.wireFlagCompletions(cmd, cs)
@@ -558,7 +560,7 @@ func (r *Registry) bindWorkflowCmd(cmd *cobra.Command, cs *spec.CommandSpec, fn 
 	if cs.BuiltinFlags.UI {
 		addFlag(cmd.Flags(), specUI)
 	}
-	if cs.BuiltinFlags.Level {
+	if nd := r.GetNoun(cs.Noun); nd != nil && nd.MultiLevel {
 		addFlag(cmd.Flags(), specLevel)
 		cmd.RegisterFlagCompletionFunc("level", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
 			return specLevelValues, cobra.ShellCompDirectiveNoFileComp
@@ -591,7 +593,7 @@ func (r *Registry) bindWorkflowCmd(cmd *cobra.Command, cs *spec.CommandSpec, fn 
 }
 
 // bindEndpointCmdFlags registers all flags for an endpoint-backed command.
-func bindEndpointCmdFlags(cmd *cobra.Command, cs *spec.CommandSpec) {
+func (r *Registry) bindEndpointCmdFlags(cmd *cobra.Command, cs *spec.CommandSpec) {
 	ep := cs.Endpoint
 
 	switch cs.VerbHandler {
@@ -630,7 +632,7 @@ func bindEndpointCmdFlags(cmd *cobra.Command, cs *spec.CommandSpec) {
 	if cs.ConfirmMode != spec.ConfirmNone {
 		cmd.Flags().Bool("force", false, "Skip confirmation prompt")
 	}
-	if cs.BuiltinFlags.Level {
+	if nd := r.GetNoun(cs.Noun); nd != nil && nd.MultiLevel {
 		addFlag(cmd.Flags(), specLevel)
 		cmd.RegisterFlagCompletionFunc("level", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
 			return specLevelValues, cobra.ShellCompDirectiveNoFileComp
@@ -672,7 +674,7 @@ func bindEndpointCmdFlags(cmd *cobra.Command, cs *spec.CommandSpec) {
 
 // bindEndpointCmd wires flags and RunE for an endpoint-backed command.
 func (r *Registry) bindEndpointCmd(cmd *cobra.Command, cs *spec.CommandSpec) {
-	bindEndpointCmdFlags(cmd, cs)
+	r.bindEndpointCmdFlags(cmd, cs)
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		if cs.VerbHandler == VerbList {
 			return r.runEndpointListCmd(cmd, cs, args)

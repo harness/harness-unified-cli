@@ -929,7 +929,7 @@ func RunUITable(ctx *cmdctx.Ctx, ep *spec.EndpointSpec) error {
 
 	var parts []string
 	if ctx.Level != "" {
-		parts = append(parts, "level: "+ctx.Level)
+		parts = append(parts, "scope: "+ctx.Level)
 	}
 	if len(parts) > 0 {
 		titleLine += "   " + strings.Join(parts, "   ")

@@ -34,7 +34,7 @@ var (
 	specListColumns = flagSpec{name: "list-columns", kind: flagKindBool, usage: "Print available column IDs and exit (use with --columns to customize output)"}
 	specListFields  = flagSpec{name: "list-fields", kind: flagKindBool, usage: "Print available field IDs and exit (use with --fields to customize output)"}
 	specPage        = flagSpec{name: "page", kind: flagKindInt, defInt: 1, usage: "Page number (1-indexed)"}
-	specLevel       = flagSpec{name: "level", defStr: "project", usage: "Scope level: project, org, or account"}
+	specLevel       = flagSpec{name: "level", defStr: "", usage: "Scope level: project, org, or account (overrides prefix on id)"}
 	specOffset      = flagSpec{name: "offset", kind: flagKindInt, usage: "Skip the first N items (item-level)"}
 	specLimit       = flagSpec{name: "limit", kind: flagKindInt, usage: "Return at most N items"}
 	specAll         = flagSpec{name: "all", kind: flagKindBool, usage: "Fetch all pages (incompatible with --offset and --limit)"}

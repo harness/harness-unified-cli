@@ -189,11 +189,33 @@ func injectUrlFn(env map[string]any, ctx *cmdctx.Ctx, noun *spec.NounDef) {
 	}
 	isPty := ctx.IsPty
 
+	// Build a level-trimmed copy of the auth map so harScopeUrl produces the
+	// correct UI path segment for the scope at which the item was queried.
+	urlEnv := env
+	if authMap, ok := env["auth"].(map[string]any); ok {
+		trimmed := maps.Clone(authMap)
+		switch ctx.Level {
+		case "account":
+			trimmed["org"] = ""
+			trimmed["project"] = ""
+			trimmed["scope"] = authMap["account"]
+		case "org":
+			trimmed["project"] = ""
+			if acct, _ := authMap["account"].(string); acct != "" {
+				if org, _ := authMap["org"].(string); org != "" {
+					trimmed["scope"] = acct + "/" + org
+				}
+			}
+		}
+		urlEnv = maps.Clone(env)
+		urlEnv["auth"] = trimmed
+	}
+
 	urlFn := func(it any) string {
 		if template == "" || ctx.Auth == nil {
 			return ""
 		}
-		result, _ := ResolvePath(WithIt(env, it), template)
+		result, _ := ResolvePath(WithIt(urlEnv, it), template)
 		return strings.TrimRight(ctx.Auth.APIUrl, "/") + result
 	}
 	env["url"] = urlFn

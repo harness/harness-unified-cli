@@ -50,6 +50,54 @@ func (r *Registry) wireCompletion(cmd *cobra.Command, cs *spec.CommandSpec) {
 	if targetNoun == "" {
 		targetNoun = cs.Noun
 	}
+
+	nd := r.GetNoun(targetNoun)
+	isMultiLevel := nd != nil && nd.MultiLevel
+	isList := verbRegistry[cs.Verb].AllowsParentId
+
+	// For multi-level list commands with no existing completion handler, inject
+	// static scope sentinels. If there is a completion endpoint, they are prepended.
+	if isMultiLevel && isList {
+		listSpec := r.GetSpec(VerbList, targetNoun)
+		if listSpec == nil || listSpec.Endpoint == nil || listSpec.Endpoint.Completion == nil {
+			// No dynamic completions — just offer the scope sentinels.
+			cmd.ValidArgsFunction = func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+				if cs.External {
+					return execPluginCompletion(r, cs.Module)
+				}
+				if len(args) > 0 {
+					return nil, cobra.ShellCompDirectiveNoFileComp
+				}
+				return []string{"account", "org"}, cobra.ShellCompDirectiveNoFileComp
+			}
+			return
+		}
+		ep := listSpec.Endpoint
+		cspec := ep.Completion
+		cmd.ValidArgsFunction = func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+			if cs.External {
+				return execPluginCompletion(r, cs.Module)
+			}
+			if len(args) > 0 {
+				return nil, cobra.ShellCompDirectiveNoFileComp
+			}
+			ctx, err := r.buildCompletionCtx(cmd, VerbList, targetNoun, toComplete)
+			if err != nil {
+				return nil, cobra.ShellCompDirectiveError
+			}
+			items, err := fetchCompletionItems(ctx, ep)
+			if err != nil {
+				return nil, cobra.ShellCompDirectiveError
+			}
+			completions, err := extractCompletions(items, cspec, exprenv.Make(ctx))
+			if err != nil {
+				return nil, cobra.ShellCompDirectiveError
+			}
+			return append([]string{"account", "org"}, completions...), cobra.ShellCompDirectiveNoFileComp
+		}
+		return
+	}
+
 	listSpec := r.GetSpec(VerbList, targetNoun)
 	if listSpec == nil || listSpec.Endpoint == nil || listSpec.Endpoint.Completion == nil {
 		return
@@ -64,7 +112,23 @@ func (r *Registry) wireCompletion(cmd *cobra.Command, cs *spec.CommandSpec) {
 		if len(args) > 0 {
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		}
-		ctx, err := r.buildCompletionCtx(cmd, VerbList, targetNoun, "")
+
+		// For multi-level nouns (e.g. get registry), the user may type a scope
+		// prefix like "account." or "org." before the id. Detect it so we can
+		// fetch at the right scope and prefix the returned completions.
+		scopeArg := ""
+		scopePrefix := ""
+		if isMultiLevel {
+			if strings.HasPrefix(toComplete, "account.") {
+				scopeArg = "account."
+				scopePrefix = "account."
+			} else if strings.HasPrefix(toComplete, "org.") {
+				scopeArg = "org."
+				scopePrefix = "org."
+			}
+		}
+
+		ctx, err := r.buildCompletionCtx(cmd, VerbList, targetNoun, scopeArg)
 		if err != nil {
 			return nil, cobra.ShellCompDirectiveError
 		}
@@ -75,6 +139,11 @@ func (r *Registry) wireCompletion(cmd *cobra.Command, cs *spec.CommandSpec) {
 		completions, err := extractCompletions(items, cspec, exprenv.Make(ctx))
 		if err != nil {
 			return nil, cobra.ShellCompDirectiveError
+		}
+		if scopePrefix != "" {
+			for i, c := range completions {
+				completions[i] = scopePrefix + c
+			}
 		}
 		return completions, cobra.ShellCompDirectiveNoFileComp
 	}

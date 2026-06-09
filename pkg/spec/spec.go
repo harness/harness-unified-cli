@@ -71,11 +71,10 @@ const (
 
 // BuiltinFlags enables predefined system flags that have fixed registration and dispatch behavior.
 type BuiltinFlags struct {
-	Page  bool `yaml:"page,omitempty"`  // --page N (1-indexed); exposed in expr as integer flags.page = N-1
-	Level bool `yaml:"level,omitempty"` // --level project|org|account; modifies auth scope before API call
-	Set   bool `yaml:"set,omitempty"`   // --set key=value (repeatable); parsed into ctx.SetArgs
-	Del   bool `yaml:"del,omitempty"`   // --del key (repeatable); parsed into ctx.DelArgs
-	UI    bool `yaml:"ui,omitempty"`    // --ui launch interactive TUI (requires both stdin and stdout to be a TTY)
+	Page bool `yaml:"page,omitempty"` // --page N (1-indexed); exposed in expr as integer flags.page = N-1
+	Set  bool `yaml:"set,omitempty"`  // --set key=value (repeatable); parsed into ctx.SetArgs
+	Del  bool `yaml:"del,omitempty"`  // --del key (repeatable); parsed into ctx.DelArgs
+	UI   bool `yaml:"ui,omitempty"`   // --ui launch interactive TUI (requires both stdin and stdout to be a TTY)
 }
 
 // Flag declares a command-specific flag surfaced in --help and validated before dispatch.

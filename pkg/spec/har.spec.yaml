@@ -404,7 +404,6 @@ commands:
       - completion_noun: registry
       - completion_noun: artifact
     flags_builtin:
-      level: true
     handler_type: endpoint
     endpoint:
       method: DELETE
@@ -423,7 +422,6 @@ commands:
       - completion_noun: artifact
       - completion_noun: artifact_version
     flags_builtin:
-      level: true
     handler_type: endpoint
     endpoint:
       method: DELETE
@@ -440,7 +438,6 @@ commands:
       - completion_noun: registry
       - completion_noun: artifact
     flags_builtin:
-      level: true
     handler_type: endpoint
     endpoint:
       path: /har/api/v1/registry/{{auth.scope}}/{{ctx.idParts[0]}}/+/artifact/{{ctx.idParts[1]}}/+/summary
@@ -457,7 +454,6 @@ commands:
       - completion_noun: artifact
       - completion_noun: artifact_version
     flags_builtin:
-      level: true
       ui: true
     handler_type: endpoint
     endpoint:
@@ -476,7 +472,6 @@ commands:
       - completion_noun: artifact
       - completion_noun: artifact_version
     flags_builtin:
-      level: true
     handler_type: endpoint
     endpoint:
       path: /har/api/v1/registry/{{auth.scope}}/{{ctx.parentIdParts[0]}}/+/artifact/{{ctx.parentIdParts[1]}}/+/version/{{ctx.parentIdParts[2]}}/files
@@ -504,7 +499,6 @@ commands:
       - completion_noun: registry
       - completion_noun: artifact
     flags_builtin:
-      level: true
     handler_type: endpoint
     flags:
       - name: search
@@ -536,7 +530,6 @@ commands:
     completion_noun: registry
     parentid_label: "<registry>"
     flags_builtin:
-      level: true
     handler_type: endpoint
     flags:
       - name: search
@@ -567,7 +560,6 @@ commands:
     fields_noun: registry_summary
     short: List artifact registries in a project
     flags_builtin:
-      level: true
     handler_type: endpoint
     flags:
       - name: search
@@ -603,7 +595,6 @@ commands:
     short: Create a new artifact registry
     requires_id: true
     flags_builtin:
-      level: true
     handler_type: endpoint
     flags:
       - name: description
@@ -638,7 +629,6 @@ commands:
     short: Delete an artifact registry by identifier
     completion_noun: registry
     flags_builtin:
-      level: true
     handler_type: endpoint
     endpoint:
       method: DELETE
@@ -650,7 +640,6 @@ commands:
     noun: registry
     short: Get an artifact registry by identifier
     flags_builtin:
-      level: true
     handler_type: endpoint
     endpoint:
       path: /har/api/v1/registry/{{auth.scope}}/{{ctx.id}}/+
@@ -662,7 +651,6 @@ commands:
     short: Get metadata for an artifact registry
     completion_noun: registry
     flags_builtin:
-      level: true
     handler_type: endpoint
     endpoint:
       path: /har/api/v2/metadata
@@ -681,7 +669,6 @@ commands:
     flags_builtin:
       set: true
       del: true
-      level: true
     handler_type: endpoint
     endpoint:
       method: PUT
@@ -708,7 +695,6 @@ commands:
       - completion_noun: registry
       - completion_noun: artifact
     flags_builtin:
-      level: true
     handler_type: endpoint
     endpoint:
       path: /har/api/v2/metadata
@@ -731,7 +717,6 @@ commands:
     flags_builtin:
       set: true
       del: true
-      level: true
     handler_type: endpoint
     endpoint:
       method: PUT
@@ -761,7 +746,6 @@ commands:
       - completion_noun: artifact
       - completion_noun: artifact_version
     flags_builtin:
-      level: true
     handler_type: endpoint
     endpoint:
       path: /har/api/v2/metadata
@@ -786,7 +770,6 @@ commands:
     flags_builtin:
       set: true
       del: true
-      level: true
     handler_type: endpoint
     endpoint:
       method: PUT
@@ -819,7 +802,6 @@ commands:
       - completion_noun: artifact
       - completion_noun: artifact_version
     flags_builtin:
-      level: true
     handler_type: endpoint
     endpoint:
       method: POST
@@ -852,7 +834,6 @@ commands:
       - completion_noun: artifact
       - completion_noun: artifact_version
     flags_builtin:
-      level: true
     handler_type: workflow
     workflow_id: execute_artifact_firewall_scan
 
@@ -864,7 +845,6 @@ commands:
     id_label: "<registry>"
     completion_noun: registry
     flags_builtin:
-      level: true
     handler_type: workflow
     workflow_id: execute_registry_firewall_scan
     flags:
@@ -880,7 +860,6 @@ commands:
     short: Migrate artifacts from a source registry into Harness using a config file
     no_id: true
     flags_builtin:
-      level: true
     handler_type: workflow
     workflow_id: execute_registry_migrate
     flags:

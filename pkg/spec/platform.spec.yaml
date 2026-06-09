@@ -448,7 +448,6 @@ commands:
     noun: project
     short: List projects in an organization
     flags_builtin:
-      level: true
     handler_type: endpoint
     flags:
       - name: search
@@ -564,7 +563,6 @@ commands:
     noun: user
     short: List users in the account
     flags_builtin:
-      level: true
     handler_type: endpoint
     flags:
       - name: search
@@ -594,7 +592,6 @@ commands:
     noun: user
     short: Get a user by identifier
     flags_builtin:
-      level: true
     handler_type: endpoint
     endpoint:
       path: /ng/api/user/aggregate/{{ctx.id}}
@@ -605,7 +602,6 @@ commands:
     noun: user_group
     short: List user groups in the account
     flags_builtin:
-      level: true
     handler_type: endpoint
     flags:
       - name: search
@@ -638,7 +634,6 @@ commands:
     noun: user_group
     short: Get a user group by identifier
     flags_builtin:
-      level: true
     handler_type: endpoint
     endpoint:
       path: /ng/api/user-groups/{{ctx.id}}
@@ -649,7 +644,6 @@ commands:
     noun: service_account
     short: List service accounts in the account
     flags_builtin:
-      level: true
     handler_type: endpoint
     flags:
       - name: search
@@ -672,7 +666,6 @@ commands:
     noun: service_account
     short: Get a service account by identifier
     flags_builtin:
-      level: true
     handler_type: endpoint
     endpoint:
       path: /ng/api/serviceaccount/aggregate/{{ctx.id}}
@@ -683,7 +676,6 @@ commands:
     noun: role
     short: List roles in the account
     flags_builtin:
-      level: true
     handler_type: endpoint
     flags:
       - name: search
@@ -729,7 +721,6 @@ commands:
     noun: role
     short: Get a role by identifier
     flags_builtin:
-      level: true
     handler_type: endpoint
     endpoint:
       path: /authz/api/roles/{{ctx.id}}
@@ -740,7 +731,6 @@ commands:
     noun: role_assignment
     short: List role assignments in scope
     flags_builtin:
-      level: true
     handler_type: endpoint
     flags:
       - name: principal_type
@@ -777,7 +767,6 @@ commands:
     noun: role_assignment
     short: Get a role assignment by identifier
     flags_builtin:
-      level: true
     handler_type: endpoint
     endpoint:
       path: /authz/api/roleassignments/{{ctx.id}}
@@ -788,7 +777,6 @@ commands:
     noun: resource_group
     short: List resource groups in scope
     flags_builtin:
-      level: true
     handler_type: endpoint
     flags:
       - name: search
@@ -817,7 +805,6 @@ commands:
     noun: resource_group
     short: Get a resource group by identifier
     flags_builtin:
-      level: true
     handler_type: endpoint
     endpoint:
       path: /authz/api/v2/resourcegroup/{{ctx.id}}
@@ -858,7 +845,6 @@ commands:
     noun: setting
     short: List platform settings
     flags_builtin:
-      level: true
     handler_type: endpoint
     flags:
       - name: category
@@ -889,7 +875,6 @@ commands:
     fields_noun: setting_value
     short: Get a setting value by identifier
     flags_builtin:
-      level: true
     handler_type: endpoint
     endpoint:
       path: /ng/api/settings/{{ctx.id}}
@@ -900,7 +885,6 @@ commands:
     noun: connector
     short: List connectors
     flags_builtin:
-      level: true
     handler_type: endpoint
     flags:
       - name: search
@@ -933,7 +917,6 @@ commands:
     short: Get a connector by identifier
     completion_noun: connector
     flags_builtin:
-      level: true
     handler_type: endpoint
     endpoint:
       path: /ng/api/connectors/{{ctx.id}}
@@ -944,7 +927,6 @@ commands:
     noun: secret
     short: List secrets (metadata only, values never returned)
     flags_builtin:
-      level: true
     handler_type: endpoint
     flags:
       - name: search
@@ -980,7 +962,6 @@ commands:
     short: Get a secret by identifier (metadata only, value never returned)
     completion_noun: secret
     flags_builtin:
-      level: true
     handler_type: endpoint
     endpoint:
       path: /ng/api/v2/secrets/{{ctx.id}}
@@ -991,7 +972,6 @@ commands:
     noun: delegate
     short: List delegates in the account
     flags_builtin:
-      level: true
     handler_type: endpoint
     flags:
       - name: status
@@ -1017,7 +997,6 @@ commands:
     noun: delegate
     short: Get a delegate by identifier
     flags_builtin:
-      level: true
     handler_type: endpoint
     endpoint:
       method: POST

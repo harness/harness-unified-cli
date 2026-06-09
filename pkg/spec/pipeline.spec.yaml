@@ -788,7 +788,6 @@ commands:
     noun: freeze_window
     short: List deployment freeze windows
     flags_builtin:
-      level: true
     handler_type: endpoint
     endpoint:
       method: POST
@@ -817,7 +816,6 @@ commands:
     short: Get a deployment freeze window by identifier
     completion_noun: freeze_window
     flags_builtin:
-      level: true
     handler_type: endpoint
     endpoint:
       path: /ng/api/freeze/{{ctx.id}}
