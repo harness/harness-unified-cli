@@ -1,0 +1,553 @@
+spec_version: 1
+module_type: builtin
+module_desc: Harness Code repositories, pull requests, branches, commits, and tags
+
+nouns:
+  - noun: repository
+    short_desc: A Harness Code source repository.
+    noun_aliases: [repo, repos, repositories]
+    url_path: /ng/account/{{auth.account}}/module/code/orgs/{{auth.org}}/projects/{{auth.project}}/repos/{{it.identifier}}
+    fields:
+      - id: identifier
+        expr: it.identifier
+      - id: description
+        expr: it.description
+      - id: default_branch
+        expr: it.default_branch
+      - id: is_public
+        expr: it.is_public
+      - id: num_forks
+        label: Forks
+        expr: it.num_forks
+        align: right
+      - id: num_pulls
+        label: PRs
+        expr: it.num_pulls
+        align: right
+      - id: updated
+        expr: epochMs(it.updated)
+      - id: created
+        expr: epochMs(it.created)
+
+  - noun: pr
+    short_desc: A Harness Code pull request.
+    noun_aliases: [prs, pull_request, pull_requests]
+    url_path: /ng/account/{{auth.account}}/module/code/orgs/{{auth.org}}/projects/{{auth.project}}/repos/{{it.source_repo_url}}/pulls/{{it.number}}
+    fields:
+      - id: number
+        label: "#"
+        expr: it.number
+        align: right
+      - id: title
+        expr: it.title
+      - id: state
+        expr: it.state
+      - id: source_branch
+        label: Source
+        expr: it.source_branch
+      - id: target_branch
+        label: Target
+        expr: it.target_branch
+      - id: author
+        expr: it.author.display_name
+      - id: reviewers
+        expr: it.stats.reviews.required_count
+        label: Req'd Reviews
+        align: right
+      - id: approvals
+        expr: it.stats.reviews.latest_approvals
+        align: right
+      - id: merge_strategy
+        expr: it.merge_method
+      - id: created
+        expr: epochMs(it.created)
+      - id: updated
+        expr: epochMs(it.updated)
+      - id: merged
+        expr: epochMs(it.merged)
+
+  - noun: branch
+    short_desc: A git branch in a Harness Code repository.
+    noun_aliases: [branches]
+    fields:
+      - id: name
+        expr: it.name
+      - id: sha
+        expr: it.sha
+      - id: is_default
+        label: Default
+        expr: it.is_default
+      - id: commit_message
+        label: Last Commit
+        expr: it.commit.message
+      - id: author
+        expr: it.commit.author.identity.name
+      - id: updated
+        expr: epochMs(it.commit.author.when)
+
+  - noun: commit
+    short_desc: A git commit in a Harness Code repository.
+    noun_aliases: [commits]
+    fields:
+      - id: sha
+        expr: it.sha
+      - id: message
+        expr: it.message
+        width_max: 60
+      - id: author
+        expr: it.author.identity.name
+      - id: author_email
+        expr: it.author.identity.email
+      - id: authored
+        expr: epochMs(it.author.when)
+
+  - noun: tag
+    short_desc: A git tag in a Harness Code repository.
+    noun_aliases: [tags]
+    fields:
+      - id: name
+        expr: it.name
+      - id: sha
+        expr: it.sha
+      - id: message
+        expr: it.message
+
+  - noun: pr_comment
+    short_desc: A comment on a pull request.
+    noun_aliases: [pr_comments]
+    fields:
+      - id: id
+        label: ID
+        expr: it.id
+      - id: author
+        expr: it.author.display_name
+      - id: text
+        expr: it.text
+        width_max: 80
+      - id: created
+        expr: epochMs(it.created)
+      - id: updated
+        expr: epochMs(it.updated)
+      - id: resolved
+        expr: it.resolved
+
+  - noun: pr_activity
+    short_desc: Activity timeline entry on a pull request (comments, reviews, state changes).
+    noun_aliases: [pr_activities]
+    fields:
+      - id: id
+        label: ID
+        expr: it.id
+      - id: kind
+        expr: it.kind
+      - id: type
+        expr: it.type
+      - id: author
+        expr: it.author.display_name
+      - id: text
+        expr: it.text
+        width_max: 80
+      - id: created
+        expr: epochMs(it.created)
+
+commands:
+  # ── repository ──────────────────────────────────────────────────────────────
+
+  - command: list repository
+    verb: list
+    noun: repository
+    short: List code repositories
+    handler_type: endpoint
+    flags:
+      - name: search
+        description: Filter by name or keyword
+    endpoint:
+      path: /code/api/v1/repos
+      items_expr: it
+      get_id_expr: it.identifier
+      query_params:
+        query: flags.search
+        page: flags.page
+        limit: flags.limit
+      paging:
+        paging_strategy: page_header
+        countable: true
+        total_header: x-total
+        page_index_param: page
+        page_size_param: limit
+        page_size_default: 30
+        page_size_max: 100
+      completion:
+        id_expr: it.identifier
+        name_expr: it.identifier
+      columns: [identifier, default_branch, num_pulls, updated]
+
+  - command: get repository
+    verb: get
+    noun: repository
+    short: Get repository details
+    handler_type: endpoint
+    endpoint:
+      path: /code/api/v1/repos/{{ctx.id}}
+      item_expr: it
+
+  - command: create repository
+    verb: create
+    noun: repository
+    short: "Create a new repository: --set identifier=<name> [default_branch=main] [description=...] [is_public=true]"
+    handler_type: endpoint
+    endpoint:
+      method: POST
+      path: /code/api/v1/repos
+      create_strategy: set-fields
+      create_body_init:
+        identifier: ctx.id
+        default_branch: '"main"'
+      create_body_wrap: ""
+      text_header: "\nCreated repository {{it.identifier}}\n"
+      text_footer: "{{url(it)}}\n"
+
+  - command: update repository
+    verb: update
+    noun: repository
+    short: Update a repository (description, default_branch, is_public)
+    handler_type: endpoint
+    flags_builtin:
+      set: true
+      del: true
+    endpoint:
+      method: PATCH
+      path: /code/api/v1/repos/{{ctx.id}}
+      update_strategy: get-then-put
+      update_body_pick: it
+      no_fields: true
+      text_header: "\nUpdated repository {{ctx.id}}\n"
+
+  - command: delete repository
+    verb: delete
+    noun: repository
+    confirm_mode: prompt
+    short: Delete a repository
+    handler_type: endpoint
+    endpoint:
+      method: DELETE
+      path: /code/api/v1/repos/{{ctx.id}}
+      item_expr: it
+
+  # ── pr ──────────────────────────────────────────────────────────────────────
+
+  - command: list pr
+    verb: list
+    noun: pr
+    short: "List pull requests for a repository: harness list pr <repo_id>"
+    handler_type: endpoint
+    requires_parentid: true
+    parentid_label: "<repo_id>"
+    flags:
+      - name: state
+        description: "Filter by state: open, closed, merged"
+        default: open
+        completion_values: [open, closed, merged]
+      - name: search
+        description: Filter by keyword
+    endpoint:
+      path: /code/api/v1/repos/{{ctx.parentId}}/pullreq
+      items_expr: it
+      get_id_expr: string(it.number)
+      query_params:
+        state: flags.state
+        query: flags.search
+        page: flags.page
+        limit: flags.limit
+      paging:
+        paging_strategy: page_header
+        countable: false
+        page_index_param: page
+        page_size_param: limit
+        page_size_default: 30
+        page_size_max: 100
+      columns: [number, title, state, source_branch, target_branch, author, updated]
+
+  - command: get pr
+    verb: get
+    noun: pr
+    short: "Get pull request details: harness get pr <repo_id>/<pr_number>"
+    handler_type: endpoint
+    id_parts: 2
+    endpoint:
+      path: /code/api/v1/repos/{{ctx.idParts[0]}}/pullreq/{{ctx.idParts[1]}}
+      item_expr: it
+
+  - command: create pr
+    verb: create
+    noun: pr
+    short: "Create a pull request: harness create pr <repo_id> --set title=... source_branch=... target_branch=..."
+    handler_type: endpoint
+    requires_parentid: true
+    parentid_label: "<repo_id>"
+    flags_builtin:
+      set: true
+    endpoint:
+      method: POST
+      path: /code/api/v1/repos/{{ctx.parentId}}/pullreq
+      create_strategy: set-fields
+      create_body_init:
+        target_branch: '"main"'
+      create_body_wrap: ""
+      text_header: "\nCreated PR #{{it.number}}: {{it.title}}\n"
+      text_footer: "{{url(it)}}\n"
+
+  - command: update pr
+    verb: update
+    noun: pr
+    short: "Update a pull request: harness update pr <repo_id>/<pr_number> --set title=..."
+    handler_type: endpoint
+    id_parts: 2
+    flags_builtin:
+      set: true
+      del: true
+    endpoint:
+      method: PATCH
+      path: /code/api/v1/repos/{{ctx.idParts[0]}}/pullreq/{{ctx.idParts[1]}}
+      update_strategy: get-then-put
+      update_body_pick: it
+      no_fields: true
+      text_header: "\nUpdated PR #{{ctx.idParts[1]}}\n"
+
+  - command: execute pr:merge
+    verb: execute
+    noun: pr
+    noun_variant: merge
+    short: "Merge a pull request: harness execute pr:merge <repo_id>/<pr_number> [--method merge|squash|rebase|fast-forward]"
+    handler_type: endpoint
+    id_parts: 2
+    flags:
+      - name: method
+        description: "Merge method: merge, squash, rebase, fast-forward"
+        default: merge
+        completion_values: [merge, squash, rebase, fast-forward]
+      - name: delete-branch
+        description: Delete source branch after merge
+        is_bool: true
+      - name: dry-run
+        description: Simulate merge without executing
+        is_bool: true
+    endpoint:
+      method: POST
+      path: /code/api/v1/repos/{{ctx.idParts[0]}}/pullreq/{{ctx.idParts[1]}}/merge
+      body_params:
+        method: flags.method
+        delete_source_branch: flags["delete-branch"]
+        dry_run: flags["dry-run"]
+      no_fields: true
+      text_header: "\nMerged PR #{{ctx.idParts[1]}}\n"
+
+  - command: execute pr:close
+    verb: execute
+    noun: pr
+    noun_variant: close
+    short: "Close a pull request: harness execute pr:close <repo_id>/<pr_number>"
+    handler_type: endpoint
+    id_parts: 2
+    endpoint:
+      method: POST
+      path: /code/api/v1/repos/{{ctx.idParts[0]}}/pullreq/{{ctx.idParts[1]}}/state
+      body_params:
+        state: '"closed"'
+      no_fields: true
+      text_header: "\nClosed PR #{{ctx.idParts[1]}}\n"
+
+  # ── branch ──────────────────────────────────────────────────────────────────
+
+  - command: list branch
+    verb: list
+    noun: branch
+    short: "List branches: harness list branch <repo_id>"
+    handler_type: endpoint
+    requires_parentid: true
+    parentid_label: "<repo_id>"
+    flags:
+      - name: search
+        description: Filter by branch name
+    endpoint:
+      path: /code/api/v1/repos/{{ctx.parentId}}/branches
+      items_expr: it
+      get_id_expr: it.name
+      query_params:
+        query: flags.search
+        page: flags.page
+        limit: flags.limit
+      paging:
+        paging_strategy: page_header
+        countable: false
+        page_index_param: page
+        page_size_param: limit
+        page_size_default: 30
+        page_size_max: 100
+      columns: [name, sha, is_default, author, updated]
+
+  - command: get branch
+    verb: get
+    noun: branch
+    short: "Get branch details: harness get branch <repo_id>/<branch_name>"
+    handler_type: endpoint
+    id_parts: 2
+    endpoint:
+      path: /code/api/v1/repos/{{ctx.idParts[0]}}/branches/{{ctx.idParts[1]}}
+      item_expr: it
+
+  - command: create branch
+    verb: create
+    noun: branch
+    short: "Create a branch: harness create branch <repo_id> --set name=<branch> target=<sha_or_branch>"
+    handler_type: endpoint
+    requires_parentid: true
+    parentid_label: "<repo_id>"
+    flags_builtin:
+      set: true
+    endpoint:
+      method: POST
+      path: /code/api/v1/repos/{{ctx.parentId}}/branches
+      create_strategy: set-fields
+      create_body_wrap: ""
+      text_header: "\nCreated branch {{it.name}}\n"
+
+  - command: delete branch
+    verb: delete
+    noun: branch
+    confirm_mode: prompt
+    short: "Delete a branch: harness delete branch <repo_id>/<branch_name>"
+    handler_type: endpoint
+    id_parts: 2
+    endpoint:
+      method: DELETE
+      path: /code/api/v1/repos/{{ctx.idParts[0]}}/branches/{{ctx.idParts[1]}}
+      item_expr: it
+
+  # ── commit ───────────────────────────────────────────────────────────────────
+
+  - command: list commit
+    verb: list
+    noun: commit
+    short: "List commits: harness list commit <repo_id> [--branch <ref>]"
+    handler_type: endpoint
+    requires_parentid: true
+    parentid_label: "<repo_id>"
+    flags:
+      - name: branch
+        description: Git ref (branch/tag/SHA) to list commits from
+      - name: path
+        description: Filter commits by file path
+    endpoint:
+      path: /code/api/v1/repos/{{ctx.parentId}}/commits
+      items_expr: it.commits
+      get_id_expr: it.sha
+      query_params:
+        git_ref: flags.branch
+        path: flags.path
+        page: flags.page
+        limit: flags.limit
+      paging:
+        paging_strategy: page_header
+        countable: false
+        page_index_param: page
+        page_size_param: limit
+        page_size_default: 20
+        page_size_max: 100
+      columns: [sha, message, author, authored]
+
+  - command: get commit
+    verb: get
+    noun: commit
+    short: "Get commit details: harness get commit <repo_id>/<sha>"
+    handler_type: endpoint
+    id_parts: 2
+    endpoint:
+      path: /code/api/v1/repos/{{ctx.idParts[0]}}/commits/{{ctx.idParts[1]}}
+      item_expr: it
+
+  # ── tag ──────────────────────────────────────────────────────────────────────
+
+  - command: list tag
+    verb: list
+    noun: tag
+    short: "List tags: harness list tag <repo_id>"
+    handler_type: endpoint
+    requires_parentid: true
+    parentid_label: "<repo_id>"
+    flags:
+      - name: search
+        description: Filter by tag name
+    endpoint:
+      path: /code/api/v1/repos/{{ctx.parentId}}/tags
+      items_expr: it
+      get_id_expr: it.name
+      query_params:
+        query: flags.search
+        page: flags.page
+        limit: flags.limit
+      paging:
+        paging_strategy: page_header
+        countable: false
+        page_index_param: page
+        page_size_param: limit
+        page_size_default: 30
+        page_size_max: 100
+      columns: [name, sha, message]
+
+  - command: create tag
+    verb: create
+    noun: tag
+    short: "Create a tag: harness create tag <repo_id> --set name=<tag> target=<sha>"
+    handler_type: endpoint
+    requires_parentid: true
+    parentid_label: "<repo_id>"
+    flags_builtin:
+      set: true
+    endpoint:
+      method: POST
+      path: /code/api/v1/repos/{{ctx.parentId}}/tags
+      create_strategy: set-fields
+      create_body_wrap: ""
+      text_header: "\nCreated tag {{it.name}}\n"
+
+  - command: delete tag
+    verb: delete
+    noun: tag
+    confirm_mode: prompt
+    short: "Delete a tag: harness delete tag <repo_id>/<tag_name>"
+    handler_type: endpoint
+    id_parts: 2
+    endpoint:
+      method: DELETE
+      path: /code/api/v1/repos/{{ctx.idParts[0]}}/tags/{{ctx.idParts[1]}}
+      item_expr: it
+
+  # ── pr_activity ───────────────────────────────────────────────────────────────
+
+  - command: list pr_activity
+    verb: list
+    noun: pr_activity
+    short: "List PR activity (comments, reviews, state changes): harness list pr_activity <repo_id> --pr <pr_number>"
+    handler_type: endpoint
+    requires_parentid: true
+    parentid_label: "<repo_id>"
+    flags:
+      - name: pr
+        description: PR number
+        required: true
+      - name: kind
+        description: "Filter by kind: comment, system, change-comment"
+        completion_values: [comment, system, change-comment]
+      - name: type
+        description: "Filter by type: comment, code-comment, review-submit, state-change, ..."
+    endpoint:
+      path: /code/api/v1/repos/{{ctx.parentId}}/pullreq/{{flags.pr}}/activities
+      items_expr: it
+      query_params:
+        kind: flags.kind
+        type: flags.type
+        limit: flags.limit
+      paging:
+        paging_strategy: flat_list
+      columns: [id, kind, type, author, text, created]

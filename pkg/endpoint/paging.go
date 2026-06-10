@@ -73,6 +73,15 @@ func BuildRequest(ctx *cmdctx.Ctx, ep *spec.EndpointSpec) (*client.Request, erro
 	}
 	if len(ep.BodyParams) > 0 {
 		req.Body = buildBody(ep, exprEnv)
+	} else if method == http.MethodPost || method == http.MethodPut || method == http.MethodPatch {
+		// gRPC-gateway rejects POST/PUT/PATCH with no body; send empty object.
+		req.Body = map[string]any{}
+	}
+	if method == http.MethodPost || method == http.MethodPut || method == http.MethodPatch {
+		req.BodyContentType = "application/json"
+	}
+	if len(ep.RequestHeaders) > 0 {
+		req.Headers = evalRequestHeaders(ep, exprEnv)
 	}
 	return req, nil
 }
@@ -109,6 +118,16 @@ func HTTPFetchFn(ctx *cmdctx.Ctx, ep *spec.EndpointSpec, wantStart, wantCount in
 	items := ExtractItems(ctx, ep, raw)
 	hlog.Debug("HTTPFetchFn", "noun", ctx.Noun, "strategy", pg.PagingStrategy, "items", len(items))
 	return strategy.ExtractPaging(ctx, ep, raw, items, headers, pagingData)
+}
+
+func evalRequestHeaders(ep *spec.EndpointSpec, exprEnv map[string]any) map[string]string {
+	result := make(map[string]string, len(ep.RequestHeaders))
+	for name, headerExpr := range ep.RequestHeaders {
+		if v := exprenv.EvalExpr(exprEnv, headerExpr); v != "" {
+			result[name] = v
+		}
+	}
+	return result
 }
 
 func buildBody(ep *spec.EndpointSpec, exprEnv map[string]any) map[string]any {

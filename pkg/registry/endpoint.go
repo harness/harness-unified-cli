@@ -123,6 +123,7 @@ func callEndpointFull(ctx *cmdctx.Ctx, ep *spec.EndpointSpec, extraQueryParams m
 
 	// Priority 3: default body_params / body_fn path.
 	qp := evalQueryParams(ctx, ep.QueryParams, true, extraQueryParams)
+	extraHeaders := evalRequestHeaders(ep, exprEnv)
 	switch method {
 	case "POST", "PUT", "PATCH", "DELETE":
 		body, err := resolveBody(ep, ctx)
@@ -131,7 +132,20 @@ func callEndpointFull(ctx *cmdctx.Ctx, ep *spec.EndpointSpec, extraQueryParams m
 		}
 		if rb, ok := body.(*cmdctx.RawBody); ok {
 			hlog.Debug("raw body", "content_type", rb.ContentType, "size", len(rb.Content))
+			if len(extraHeaders) > 0 {
+				return c.DoRequest(client.Request{Method: method, Path: path, QueryParams: qp, Body: rb.Content, BodyContentType: rb.ContentType, Headers: extraHeaders})
+			}
 			return c.PostRaw(path, qp, rb.Content, rb.ContentType)
+		}
+		if len(extraHeaders) > 0 {
+			ct := ""
+			if method == "POST" || method == "PUT" || method == "PATCH" {
+				ct = "application/json"
+				if body == nil {
+					body = map[string]any{}
+				}
+			}
+			return c.DoRequest(client.Request{Method: method, Path: path, QueryParams: qp, Body: body, BodyContentType: ct, Headers: extraHeaders})
 		}
 		switch method {
 		case "POST":
@@ -147,8 +161,25 @@ func callEndpointFull(ctx *cmdctx.Ctx, ep *spec.EndpointSpec, extraQueryParams m
 			return c.Post(path, qp, body)
 		}
 	default:
+		if len(extraHeaders) > 0 {
+			return c.DoRequest(client.Request{Method: "GET", Path: path, QueryParams: qp, Headers: extraHeaders})
+		}
 		return c.Get(path, qp)
 	}
+}
+
+// evalRequestHeaders evaluates ep.RequestHeaders expressions and returns the resolved header map.
+func evalRequestHeaders(ep *spec.EndpointSpec, exprEnv map[string]any) map[string]string {
+	if len(ep.RequestHeaders) == 0 {
+		return nil
+	}
+	result := make(map[string]string, len(ep.RequestHeaders))
+	for name, headerExpr := range ep.RequestHeaders {
+		if v := exprenv.EvalExpr(exprEnv, headerExpr); v != "" {
+			result[name] = v
+		}
+	}
+	return result
 }
 
 // RunEndpoint calls CallEndpoint then renders the result according to ctx.FormatFlags
@@ -498,11 +529,15 @@ func fetchPage(ctx *cmdctx.Ctx, ep *spec.EndpointSpec, pageIndex, pageSize int) 
 	// Populate hasTotal/total from the model-specific source.
 	switch pg.PagingStrategy {
 	case spec.PagingStrategyPageHeader:
-		v, err := strconv.ParseInt(headers.Get("X-Total-Elements"), 10, 64)
-		if err != nil {
-			return nil, fmt.Errorf("page_header: missing or invalid X-Total-Elements header")
+		totalHeader := pg.TotalHeader
+		if totalHeader == "" {
+			totalHeader = "X-Total-Elements"
 		}
-		pd.hasTotal, pd.total = true, v
+		if v, err := strconv.ParseInt(headers.Get(totalHeader), 10, 64); err == nil {
+			pd.hasTotal, pd.total = true, v
+		} else if pg.IsCountable() {
+			return nil, fmt.Errorf("page_header: missing or invalid %s header", totalHeader)
+		}
 	case spec.PagingStrategyPageIndex:
 		if pg.TotalExpr != "" {
 			v, ok := exprenv.EvalExprAny(exprEnv, pg.TotalExpr)

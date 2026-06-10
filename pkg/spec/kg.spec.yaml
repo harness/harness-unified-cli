@@ -1,0 +1,254 @@
+spec_version: 1
+module_type: builtin
+module_desc: Harness Knowledge Graph — schema types, queryable types, relationships, connections, and HQL query execution
+
+nouns:
+  - noun: kg
+    short_desc: "Harness Knowledge Graph — explore schema types, queryable types, relationships, and connections."
+    fields:
+      # type / related-type fields
+      - id: id
+        expr: it.id
+      - id: kind
+        expr: it.kind
+      - id: name
+        expr: it.name
+      - id: description
+        expr: it.description
+        width_max: 60
+      - id: field_count
+        label: Fields
+        expr: len(it.fields)
+        align: right
+      - id: relationship
+        expr: it.relationship_type
+      - id: direction
+        expr: it.direction
+      # queryable-type fields (oneof-resolved)
+      - id: qt_id
+        label: ID
+        expr: it.type_reference.id
+      - id: qt_kind
+        label: Kind
+        expr: it.type_reference.object_kind
+      - id: qt_name
+        label: Name
+        expr: (it.type.entity_type ?? it.type.event_type ?? it.type.metric_type ?? it.type.view_type ?? it.type.relationship_type ?? it.type.config_type ?? {})["name"]
+      - id: qt_description
+        label: Description
+        expr: (it.type.entity_type ?? it.type.event_type ?? it.type.metric_type ?? it.type.view_type ?? it.type.relationship_type ?? it.type.config_type ?? {})["description"]
+        width_max: 60
+      # connection fields
+      - id: type
+        expr: it.type
+      - id: valid
+        expr: it.valid
+
+  - noun: hql
+    short_desc: "Harness Query Language (HQL) — validate, run, explain queries, or fetch the grammar."
+    noun_aliases: [hql_query]
+    fields:
+      - id: is_valid
+        expr: it.is_valid
+      - id: errors
+        expr: it.errors
+
+commands:
+  # ── kg:type ───────────────────────────────────────────────────────────────────
+
+  - command: list kg:type
+    verb: list
+    noun: kg
+    noun_variant: type
+    short: "List all Knowledge Graph schema types (entities, events, metrics, views, relationships, configs)"
+    handler_type: endpoint
+    flags:
+      - name: kind
+        description: "Filter by type kind: OBJECT_KIND_ENTITY, OBJECT_KIND_EVENT, OBJECT_KIND_METRIC, OBJECT_KIND_VIEW, OBJECT_KIND_RELATIONSHIP, OBJECT_KIND_CONFIG"
+        completion_values: [OBJECT_KIND_ENTITY, OBJECT_KIND_EVENT, OBJECT_KIND_METRIC, OBJECT_KIND_VIEW, OBJECT_KIND_RELATIONSHIP, OBJECT_KIND_CONFIG]
+    endpoint:
+      method: POST
+      path: /schema-service/grpc/io.harness.platform.schema.service.api.v1.SchemaServiceGrpc/getTypes
+      request_headers:
+        x-tenant-id: auth.account
+      body_params:
+        filter.objectKind: 'flags.kind != "" ? [flags.kind] : []'
+      items_expr: concat(it.entity_types ?? [], it.event_types ?? [], it.metric_types ?? [], it.view_types ?? [], it.relationship_types ?? [], it.config_types ?? [])
+      paging:
+        paging_strategy: flat_list
+      columns: [id, kind, name, field_count]
+
+  - command: get kg:type
+    verb: get
+    noun: kg
+    noun_variant: type
+    short: "Get a single Knowledge Graph schema type with full field metadata"
+    handler_type: endpoint
+    flags:
+      - name: kind
+        description: "Object kind (default: OBJECT_KIND_ENTITY)"
+        default: OBJECT_KIND_ENTITY
+        completion_values: [OBJECT_KIND_ENTITY, OBJECT_KIND_EVENT, OBJECT_KIND_METRIC, OBJECT_KIND_VIEW, OBJECT_KIND_RELATIONSHIP, OBJECT_KIND_CONFIG]
+    endpoint:
+      method: POST
+      path: /schema-service/grpc/io.harness.platform.schema.service.api.v1.SchemaServiceGrpc/getType
+      request_headers:
+        x-tenant-id: auth.account
+      body_params:
+        kind: flags.kind
+        id: ctx.id
+      item_expr: it.type.entity_type ?? it.type.event_type ?? it.type.metric_type ?? it.type.view_type ?? it.type.relationship_type ?? it.type.config_type ?? it
+      fields_subset: [id, kind, name, description, field_count]
+
+  # ── kg:queryable ──────────────────────────────────────────────────────────────
+
+  - command: list kg:queryable_type
+    verb: list
+    noun: kg
+    noun_variant: queryable_type
+    short: List all types queryable via HQL with field metadata
+    handler_type: endpoint
+    endpoint:
+      method: POST
+      path: /query-service/grpc/io.harness.platform.query.service.api.v1.QueryServiceGrpc/getQueryableTypes
+      request_headers:
+        x-tenant-id: auth.account
+      items_expr: it.queryable_types
+      paging:
+        paging_strategy: flat_list
+      columns: [qt_id, qt_kind, qt_name]
+
+  # ── kg:related ────────────────────────────────────────────────────────────────
+
+  - command: list kg:related_type
+    verb: list
+    noun: kg
+    noun_variant: related_type
+    short: "List types related to a source type: harness list kg:related_type <type_id> [--kind OBJECT_KIND_ENTITY]"
+    handler_type: endpoint
+    flags:
+      - name: kind
+        description: "Object kind of the source type (default: OBJECT_KIND_ENTITY)"
+        default: OBJECT_KIND_ENTITY
+        completion_values: [OBJECT_KIND_ENTITY, OBJECT_KIND_EVENT, OBJECT_KIND_METRIC, OBJECT_KIND_VIEW, OBJECT_KIND_RELATIONSHIP, OBJECT_KIND_CONFIG]
+      - name: transitive
+        description: Include transitive relationships
+        is_bool: true
+    endpoint:
+      method: POST
+      path: /schema-service/grpc/io.harness.platform.schema.service.api.v1.SchemaServiceGrpc/getRelatedTypes
+      request_headers:
+        x-tenant-id: auth.account
+      body_params:
+        type_reference.object_kind: flags.kind
+        type_reference.id: ctx.id
+        include_transitive: flags.transitive
+      items_expr: it.related_types
+      paging:
+        paging_strategy: flat_list
+      columns: [id, name, relationship, direction]
+
+  # ── kg:connection ─────────────────────────────────────────────────────────────
+
+  - command: list kg:connection
+    verb: list
+    noun: kg
+    noun_variant: connection
+    short: List all active data source connections used by the query engine
+    handler_type: endpoint
+    endpoint:
+      method: POST
+      path: /query-service/grpc/io.harness.platform.query.service.api.v1.QueryServiceGrpc/getConnections
+      request_headers:
+        x-tenant-id: auth.account
+      items_expr: it.connections
+      paging:
+        paging_strategy: flat_list
+      columns: [name, type, valid]
+
+  # ── hql ───────────────────────────────────────────────────────────────────────
+
+  - command: execute hql:grammar
+    verb: execute
+    noun: hql
+    noun_variant: grammar
+    no_id: true
+    short: "Fetch the HQL ANTLR4 grammar: harness execute hql:grammar"
+    handler_type: endpoint
+    endpoint:
+      method: POST
+      path: /query-service/grpc/io.harness.platform.query.service.api.v1.QueryServiceGrpc/getGrammar
+      request_headers:
+        x-tenant-id: auth.account
+      no_fields: true
+      text_header: "{{it.grammar}}"
+
+  - command: execute hql:validate
+    verb: execute
+    noun: hql
+    noun_variant: validate
+    no_id: true
+    short: "Validate an HQL query: harness execute hql:validate --query 'find entity \"platform:project\" | select { * }'"
+    handler_type: endpoint
+    flags:
+      - name: query
+        short: q
+        description: HQL query string
+        required: true
+    endpoint:
+      method: POST
+      path: /query-service/grpc/io.harness.platform.query.service.api.v1.QueryServiceGrpc/validateQuery
+      request_headers:
+        x-tenant-id: auth.account
+      body_params:
+        query_string: flags.query
+      item_expr: it
+
+  - command: execute hql:run
+    verb: execute
+    noun: hql
+    noun_variant: run
+    no_id: true
+    short: "Execute an HQL query: harness execute hql:run --query 'find entity \"platform:project\" | select { * } | limit 10'"
+    handler_type: endpoint
+    flags:
+      - name: query
+        short: q
+        description: HQL query string
+        required: true
+      - name: timeout
+        description: "Timeout in milliseconds"
+    endpoint:
+      method: POST
+      path: /query-service/grpc/io.harness.platform.query.service.api.v1.QueryServiceGrpc/executeQuery
+      request_headers:
+        x-tenant-id: auth.account
+      body_params:
+        query_string: flags.query
+        options.timeout_ms: 'flags.timeout != "" ? flags.timeout : nil'
+      no_fields: true
+      item_expr: it.result
+      text_header: "{{it}}"
+
+  - command: execute hql:explain
+    verb: execute
+    noun: hql
+    noun_variant: explain
+    no_id: true
+    short: "Explain an HQL query execution plan: harness execute hql:explain --query 'find entity \"platform:project\" | select { * }'"
+    handler_type: endpoint
+    flags:
+      - name: query
+        short: q
+        description: HQL query string
+        required: true
+    endpoint:
+      method: POST
+      path: /query-service/grpc/io.harness.platform.query.service.api.v1.QueryServiceGrpc/generateQueryPlan
+      request_headers:
+        x-tenant-id: auth.account
+      body_params:
+        query_string: flags.query
+      no_fields: true
+      item_expr: it
+      text_header: "{{it}}"

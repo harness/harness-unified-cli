@@ -279,6 +279,11 @@ type EndpointSpec struct {
 	// Supports nested paths: {"config.type": "flags.type"} sets body["config"]["type"].
 	// Expressions have access to ctx, auth, flags, coalesce(), formatTags(), etc.
 	BodyParams map[string]string `yaml:"body_params,omitempty"`
+	// RequestHeaders maps HTTP header name → expr-lang expression.
+	// Headers are evaluated against the command context (auth, flags, ctx) and injected
+	// into the request. Useful for APIs that require custom headers, e.g. x-tenant-id.
+	// Example: {"x-tenant-id": "auth.account"}
+	RequestHeaders map[string]string `yaml:"request_headers,omitempty"`
 	// FieldExtract, when non-empty, extracts this top-level string field from the
 	// JSON response object and prints it as a raw string instead of JSON.
 	FieldExtract string `yaml:"field_extract,omitempty"`

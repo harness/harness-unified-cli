@@ -173,17 +173,16 @@ func (pageHeaderStrategy) ExtractPaging(_ *cmdctx.Ctx, ep *spec.EndpointSpec, ra
 	if totalHeader == "" {
 		totalHeader = "X-Total-Elements"
 	}
-	v, err := strconv.ParseInt(headers.Get(totalHeader), 10, 64)
-	if err != nil {
-		return nil, fmt.Errorf("page_header: missing or invalid %s header", totalHeader)
-	}
 
 	pr := &cmdctx.PageResult{
 		Raw:         raw,
 		Items:       items,
 		StartOffset: d.startOffset,
-		HasTotal:    true,
-		Total:       v,
+	}
+	if v, err := strconv.ParseInt(headers.Get(totalHeader), 10, 64); err == nil {
+		pr.HasTotal, pr.Total = true, v
+	} else if ep.Paging.IsCountable() {
+		return nil, fmt.Errorf("page_header: missing or invalid %s header", totalHeader)
 	}
 
 	pr.Last = len(items) == 0 ||
