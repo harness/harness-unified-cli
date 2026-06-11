@@ -349,6 +349,25 @@ nouns:
         label: Error Summary
         expr: it.errorSummary
 
+  - noun: entity_usage
+    short_desc: An entity (pipeline, template, etc.) that references another entity such as a connector.
+    noun_aliases: [entity_usages]
+    multi_level: true
+    fields:
+      - id: type
+        expr: it.referredByEntity.type
+      - id: name
+        expr: it.referredByEntity.name
+      - id: identifier
+        expr: it.referredByEntity.entityRef.identifier
+      - id: org
+        expr: it.referredByEntity.entityRef.orgIdentifier
+      - id: project
+        expr: it.referredByEntity.entityRef.projectIdentifier
+      - id: created_at
+        expr: epochMs(it.createdAt)
+        field_type: ts
+
   - noun: delegate
     short_desc: An agent installed in your infrastructure that executes pipeline tasks on Harness's behalf.
     noun_aliases: [delegates]
@@ -1078,6 +1097,34 @@ commands:
         accountIdentifier: auth.account
         orgIdentifier: auth.org
         projectIdentifier: auth.project
+
+  - command: list entity_usage
+    verb: list
+    noun: entity_usage
+    short: "List entities that reference a connector: harness list entity_usage connector/<id>"
+    hidden: true
+    id_allow_slash: true
+    id_label: "<type/id>"
+    completion_seq:
+      - static_values: [connector]
+      - completion_noun: connector
+    handler_type: endpoint
+    endpoint:
+      path: /ng/api/entitySetupUsage
+      items_expr: it.data.content
+      columns: [type, name, identifier, org, project]
+      get_id_expr: it.referredByEntity.entityRef.identifier
+      query_params:
+        entityType: '"Connectors"'
+        entityIdentifier: lastPart(ctx.parentId)
+      paging:
+        paging_strategy: page_index
+        countable: true
+        page_index_param: pageIndex
+        page_size_param: pageSize
+        page_size_default: 50
+        page_size_max: 100
+        total_expr: it.data.totalItems
 
   - command: list delegate
     verb: list
