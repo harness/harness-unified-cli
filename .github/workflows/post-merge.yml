@@ -1,0 +1,29 @@
+name: Post-merge checks
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  goreleaser-check:
+    name: Validate goreleaser config
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install Task
+        uses: arduino/setup-task@v2
+        with:
+          version: 3.x
+
+      - name: Check goreleaser config
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          args: check
