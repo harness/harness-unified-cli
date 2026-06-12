@@ -140,16 +140,15 @@ The grammar is `harness <verb> <noun> [identifier] [flags]`. Use `--help` at any
 
 ### Supported commands
 
-| Symbol | Meaning                                                     |
-| ------ | ----------------------------------------------------------- |
-| `✓`    | Supported                                                   |
-| `P`    | Supports paging (`--limit`, `--offset`, `--all`, `--count`) |
-| `L`    | Supports `--level` flag (account / org / project scope)     |
-| `S`    | Set-fields — create via `--set` / positional args           |
-| `GTP`  | Get-then-put — update via `--set` / `--del`                 |
-| `Y`    | YAML file — outputs or accepts a YAML file via `-f`         |
+| Symbol | Meaning                                                 |
+| ------ | ------------------------------------------------------- |
+| `✓`    | Supported                                               |
+| `L`    | Supports `--level` flag (account / org / project scope) |
+| `S`    | Set-fields — create via `--set` / positional args       |
+| `GTP`  | Get-then-put — update via `--set` / `--del`             |
+| `Y`    | YAML file — outputs or accepts a YAML file via `-f`     |
 
-Symbols combine — `PL` means paged and level-aware.
+All `list` commands support paging (`--limit`, `--offset`, `--all`, `--count`) by default.
 
 #### Discovery
 
@@ -166,56 +165,125 @@ Symbols combine — `PL` means paged and level-aware.
 | Noun              | list | get | create | update | delete | execute |
 | ----------------- | ---- | --- | ------ | ------ | ------ | ------- |
 | `account`         |      | ✓   |        |        |        |         |
-| `organization`    | P    | ✓   | S      | GTP    | ✓      |         |
-| `project`         | PL   | ✓   | S      | GTP    | ✓      |         |
-| `user`            | PL   | L   |        |        |        |         |
-| `user_group`      | PL   | L   |        |        |        |         |
-| `service_account` | PL   | L   |        |        |        |         |
-| `role`            | PL   | L   |        |        |        |         |
-| `role_assignment` | PL   | L   |        |        |        |         |
-| `resource_group`  | PL   | L   |        |        |        |         |
-| `permission`      | P    | ✓   |        |        |        |         |
-| `connector`       | PL   | L   |        |        |        |         |
-| `secret`          | PL   | L   |        |        |        |         |
-| `delegate`        | PL   | L   |        |        |        |         |
-| `setting`         | PL   | L   |        |        |        |         |
+| `organization`    | ✓    | ✓   | S      | GTP    | ✓      |         |
+| `project`         | L    | ✓   | S      | GTP    | ✓      |         |
+| `user`            | L    | ✓   |        |        |        |         |
+| `user_group`      | L    | ✓   |        |        |        |         |
+| `service_account` | L    | ✓   |        |        |        |         |
+| `role`            | L    | ✓   |        |        |        |         |
+| `role_assignment` | L    | ✓   |        |        |        |         |
+| `resource_group`  | L    | ✓   |        |        |        |         |
+| `permission`      | ✓    | ✓   |        |        |        |         |
+| `connector`       | L    | ✓   | S      | GTP    | ✓      | ✓       |
+| `delegate`        | L    | ✓   |        |        |        |         |
+| `delegate_token`  | ✓    |     | ✓      |        | ✓      |         |
+| `secret`          | L    | ✓   | S      | GTP    | ✓      |         |
+| `setting`         | L    | ✓   |        |        |        |         |
+| `entity_usage`    | ✓    |     |        |        |        |         |
 
 #### Pipelines / CI/CD
 
-| Noun                      | list | get | create | update | delete | execute |
-| ------------------------- | ---- | --- | ------ | ------ | ------ | ------- |
-| `pipeline`                | P    | Y   | Y      | Y      | ✓      | ✓       |
-| `pipeline:summary`        |      | ✓   |        |        |        |         |
-| `pipeline:input_set`      |      |     |        |        |        | ✓       |
-| `pipeline_v1`             | ✓    | ✓   |        |        |        |         |
-| `execution`               | P    | ✓   |        |        |        |         |
-| `execution_step`          | ✓    |     |        |        |        |         |
-| `execution_log`           | ✓    | ✓   |        |        |        |         |
-| `trigger`                 | ✓    | ✓   |        |        |        |         |
-| `input_set`               | ✓    | ✓   |        |        |        |         |
-| `runtime_input_template`  |      | ✓   |        |        |        |         |
-| `approval_instance`       | ✓    |     |        |        |        |         |
-| `template`                | ✓    | ✓   |        |        |        |         |
-| `freeze_window`           | ✓    | ✓   |        |        |        |         |
-| `global_freeze`           |      | ✓   |        |        |        |         |
+
+| Noun                     | list | get | create | update | delete | execute |
+| ------------------------ | ---- | --- | ------ | ------ | ------ | ------- |
+| `pipeline`               | ✓    | Y   | Y      | Y      | ✓      | ✓       |
+| `pipeline:dynamic`       |      |     |        |        |        | ✓       |
+| `pipeline:input_set`     |      |     |        |        |        | ✓       |
+| `pipeline:summary`       |      | ✓   |        |        |        |         |
+| `pipeline_v1`            | ✓    | ✓   |        |        |        |         |
+| `execution`              | ✓    | ✓   |        |        |        |         |
+| `execution_step`         | ✓    |     |        |        |        |         |
+| `execution_log`          | ✓    | ✓   |        |        |        |         |
+| `trigger`                | ✓    | ✓   |        |        |        |         |
+| `input_set`              | ✓    | ✓   |        |        |        |         |
+| `runtime_input_template` |      | ✓   |        |        |        |         |
+| `approval_instance`      | ✓    |     |        |        |        |         |
+| `template`               | ✓    | ✓   |        |        |        |         |
+| `freeze_window`          | L    | ✓   |        |        |        |         |
+| `global_freeze`          |      | ✓   |        |        |        |         |
 
 #### IaCM
 
-| Noun        | list | execute |
-| ----------- | ---- | ------- |
-| `workspace` | P    | ✓       |
+| Noun        | list | get | execute |
+| ----------- | ---- | --- | ------- |
+| `workspace` | ✓    | ✓   | ✓       |
 
 #### Artifact Registry
 
-| Noun                        | list | get | create | update | delete | push | pull |
-| --------------------------- | ---- | --- | ------ | ------ | ------ | ---- | ---- |
-| `registry`                  | ✓    | ✓   | ✓      |        |        |      |      |
-| `registry_metadata`         |      | ✓   |        | ✓      | ✓      |      |      |
-| `artifact`                  | ✓    | ✓   |        |        | ✓      | ✓    | ✓    |
-| `artifact_metadata`         |      | ✓   |        | ✓      | ✓      |      |      |
-| `artifact_version`          | ✓    | ✓   |        |        | ✓      |      |      |
-| `artifact_version_metadata` |      | ✓   |        | ✓      | ✓      |      |      |
-| `artifact_file`             | ✓    |     |        |        |        |      |      |
+| Noun                        | list | get | create | update | delete | execute | push       | pull |
+| --------------------------- | ---- | --- | ------ | ------ | ------ | ------- | ---------- | ---- |
+| `registry`                  | ✓    | ✓   | S      |        | ✓      | ✓       |            |      |
+| `registry:firewall_scan`    |      |     |        |        |        | ✓       |            |      |
+| `registry:migrate`          |      |     |        |        |        | ✓       |            |      |
+| `registry_metadata`         |      | ✓   |        | GTP    |        |         |            |      |
+| `artifact`                  | ✓    | ✓   |        |        | ✓      |         | (multiple) | ✓    |
+| `artifact_metadata`         |      | ✓   |        | GTP    |        |         |            |      |
+| `artifact_version`          | ✓    | ✓   |        |        | ✓      | ✓       |            |      |
+| `artifact_version:copy`     |      |     |        |        |        | ✓       |            |      |
+| `artifact_version:firewall_scan` |  |     |        |        |        | ✓       |            |      |
+| `artifact_version_metadata` |      | ✓   |        | GTP    |        |         |            |      |
+| `artifact_file`             | ✓    |     |        |        |        |         |            |      |
+
+#### CD
+
+| Noun               | list | get | create | update | delete |
+| ------------------ | ---- | --- | ------ | ------ | ------ |
+| `service`          | ✓    | ✓   | S      | GTP    | ✓      |
+| `environment`      | ✓    | ✓   | S      | GTP    | ✓      |
+| `infrastructure`   | ✓    | ✓   | S      | GTP    | ✓      |
+| `service_override` | ✓    | ✓   | S      | GTP    | ✓      |
+
+#### Code
+
+| Noun         | list | get | create | update | delete | execute |
+| ------------ | ---- | --- | ------ | ------ | ------ | ------- |
+| `repository` | ✓    | ✓   | S      | GTP    | ✓      |         |
+| `pr`         | ✓    | ✓   | S      | GTP    |        |         |
+| `pr:merge`   |      |     |        |        |        | ✓       |
+| `pr:close`   |      |     |        |        |        | ✓       |
+| `branch`     | ✓    | ✓   | S      |        | ✓      |         |
+| `commit`     | ✓    | ✓   |        |        |        |         |
+| `tag`        | ✓    |     | S      |        | ✓      |         |
+| `pr_activity` | ✓   |     |        |        |        |         |
+
+#### Governance
+
+| Noun               | list | get | create | update | delete |
+| ------------------ | ---- | --- | ------ | ------ | ------ |
+| `policy`           | ✓    | ✓   | S      | GTP    | ✓      |
+| `policy_set`       | ✓    | ✓   | S      | GTP    | ✓      |
+| `policy_evaluation` | ✓   |     |        |        |        |
+
+#### Audit
+
+| Noun          | list | get |
+| ------------- | ---- | --- |
+| `audit_event` | ✓    | ✓   |
+
+#### AI Evals
+
+| Noun              | list | get | create | delete | execute |
+| ----------------- | ---- | --- | ------ | ------ | ------- |
+| `eval_dataset`    | ✓    | ✓   | S      | ✓      |         |
+| `evaluation`      | ✓    | ✓   | S      | ✓      |         |
+| `evaluation:run`  |      |     |        |        | ✓       |
+| `eval_run`        | ✓    | ✓   |        |        |         |
+| `eval_metric`     | ✓    | ✓   | S      | ✓      |         |
+| `eval_metric_set` | ✓    | ✓   | S      | ✓      |         |
+| `eval_target`     | ✓    | ✓   | S      | ✓      |         |
+| `eval_model`      | ✓    | ✓   | S      | ✓      |         |
+| `eval_suite`      | ✓    | ✓   |        | ✓      |         |
+| `eval_suite:run`  |      |     |        |        | ✓       |
+
+#### Knowledge Graph
+
+| Noun           | list | get | execute |
+| -------------- | ---- | --- | ------- |
+| `kg`           | ✓    | ✓   |         |
+| `hql:run`      |      |     | ✓       |
+| `hql:validate` |      |     | ✓       |
+| `hql:explain`  |      |     | ✓       |
+| `hql:grammar`  |      |     | ✓       |
 
 ---
 
@@ -247,4 +315,11 @@ Use `--profile` to target a specific account/org/project config:
 ```sh
 harness auth login --profile prod --api-token <token> --account <id>
 harness list pipeline --profile prod
+```
+
+To switch the active profile for an entire shell session, set `HARNESS_PROFILE`:
+
+```sh
+export HARNESS_PROFILE=prod
+harness list pipeline   # uses the prod profile
 ```
