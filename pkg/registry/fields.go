@@ -16,6 +16,18 @@ import (
 	"github.com/harness/harness-cli/pkg/spec"
 )
 
+// splitFieldIDs splits a comma-separated --fields string into trimmed, non-empty IDs.
+func splitFieldIDs(s string) []string {
+	parts := strings.Split(s, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if id := strings.TrimSpace(p); id != "" {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
 // resolveNounDef returns the NounDef for the command, respecting fields_noun override.
 // Returns nil if no resolver is set or the noun is not registered.
 func resolveNounDef(ctx *cmdctx.Ctx) *spec.NounDef {

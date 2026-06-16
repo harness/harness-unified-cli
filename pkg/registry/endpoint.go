@@ -278,6 +278,12 @@ func RunEndpoint(ctx *cmdctx.Ctx, ep *spec.EndpointSpec) (any, error) {
 		return nil, nil
 	}
 
+	if ctx.VerbHandler == VerbGet && ctx.FormatFlags.Fields != "" {
+		fieldIDs := splitFieldIDs(ctx.FormatFlags.Fields)
+		fields := resolveFieldsForCommand(ctx, ep)
+		return result, format.FormatFieldsOutput(ctx.FormatFlags, result, ep.ItemExpr, fields, fieldIDs, exprEnv)
+	}
+
 	var textFmt cmdctx.TextFormatterFn
 	if ep.TextFormatter != "" && ctx.Resolver != nil {
 		textFmt = ctx.Resolver.ResolveTextFormatter(ep.TextFormatter)

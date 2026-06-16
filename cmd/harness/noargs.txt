@@ -41,6 +41,7 @@ Output flags (list):
 Output flags (get, create, update):
   --format text|json               output format (default: text)
   --json                           shorthand for --format json
+  --fields <ids>                   extract field values, tab-separated (e.g. "name,git_url"); for shell $() capture
   --list-fields                    print available field IDs for this command
 
 Examples:
