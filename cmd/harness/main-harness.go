@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/harness/harness-cli/pkg/console"
+	"github.com/harness/harness-cli/modules/code"
 	"github.com/harness/harness-cli/modules/core"
 	"github.com/harness/harness-cli/modules/iacm"
 	"github.com/harness/harness-cli/modules/pipeline"
@@ -31,6 +32,7 @@ func main() {
 		console.PrintError(err.Error())
 		os.Exit(1)
 	}
+	code.ModuleInit(reg.Module("code"))
 	core.ModuleInit(reg.Module("core"))
 	pipeline.ModuleInit(reg.Module("pipeline"))
 	// har is an external module (external_binary: harness-har) — ModuleInit is not loaded here.

@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"maps"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"go.yaml.in/yaml/v3"
@@ -22,8 +21,6 @@ import (
 	"github.com/harness/harness-cli/pkg/hlog"
 	"github.com/harness/harness-cli/pkg/spec"
 )
-
-const maxItemsAll = 100_000_000
 
 // CallEndpoint executes an API call described by ep using auth and flags from ctx.
 // It returns the raw decoded response. Workflows use this to fetch data and manipulate
@@ -281,6 +278,12 @@ func RunEndpoint(ctx *cmdctx.Ctx, ep *spec.EndpointSpec) (any, error) {
 		return nil, nil
 	}
 
+	if ctx.VerbHandler == VerbGet && ctx.FormatFlags.Fields != "" {
+		fieldIDs := splitFieldIDs(ctx.FormatFlags.Fields)
+		fields := resolveFieldsForCommand(ctx, ep)
+		return result, format.FormatFieldsOutput(ctx.FormatFlags, result, ep.ItemExpr, fields, fieldIDs, exprEnv)
+	}
+
 	var textFmt cmdctx.TextFormatterFn
 	if ep.TextFormatter != "" && ctx.Resolver != nil {
 		textFmt = ctx.Resolver.ResolveTextFormatter(ep.TextFormatter)
@@ -351,75 +354,6 @@ func firstNonEmpty(vals ...string) string {
 	return ""
 }
 
-// FetchItems normalizes user flags into an offset/limit pair and delegates to FetchRange.
-func FetchItems(ctx *cmdctx.Ctx, ep *spec.EndpointSpec, pf cmdctx.PagingFlags) ([]any, *format.PageMeta, error) {
-	if ep.Paging == nil {
-		return nil, nil, fmt.Errorf("FetchItems called on endpoint with no paging spec")
-	}
-	if pf.Offset < 0 || pf.Limit < 0 {
-		return nil, nil, fmt.Errorf("offset and limit must be non-negative")
-	}
-
-	if ep.Paging.PagingStrategy == spec.PagingStrategyFlatList {
-		return fetchFlatList(ctx, ep, pf.Offset, pf.Limit)
-	}
-
-	offset := pf.Offset
-	limit := pf.Limit
-
-	switch {
-	case pf.All:
-		offset = 0
-		limit = maxItemsAll
-	case limit == 0:
-		limit = ep.Paging.PageSizeDefault
-	}
-
-	hlog.Debug("FetchItems", "noun", ctx.Noun, "all", pf.All, "offset", offset, "limit", limit)
-	return FetchRange(ctx, ep, offset, limit)
-}
-
-// fetchFlatList fetches all items in a single call and applies offset/limit client-side.
-func fetchFlatList(ctx *cmdctx.Ctx, ep *spec.EndpointSpec, offset, limit int) ([]any, *format.PageMeta, error) {
-	result, _, err := callEndpointFull(ctx, ep, nil)
-	if err != nil {
-		return nil, nil, err
-	}
-	exprEnv := exprenv.WithIt(exprenv.Make(ctx), result)
-	items, err := exprenv.EvalItemsExpr(exprEnv, ep.ItemsExpr)
-	if err != nil {
-		items = nil
-	}
-	hlog.Debug("fetchFlatList", "noun", ctx.Noun, "total", len(items), "offset", offset, "limit", limit)
-
-	total := len(items)
-	if offset > total {
-		offset = total
-	}
-	items = items[offset:]
-	if limit > 0 && len(items) > limit {
-		items = items[:limit]
-	}
-
-	meta := &format.PageMeta{
-		Offset:   offset,
-		Count:    len(items),
-		HasTotal: true,
-		Total:    int64(total),
-	}
-	return items, meta, nil
-}
-
-// RunListWithPaging fetches one or more pages according to ctx.PagingFlags and renders
-// the accumulated items through the standard list formatting pipeline.
-func RunListWithPaging(ctx *cmdctx.Ctx, ep *spec.EndpointSpec) error {
-	items, meta, err := FetchItems(ctx, ep, ctx.PagingFlags)
-	if err != nil {
-		return err
-	}
-	return renderList(ctx, ep, items, meta)
-}
-
 // fetchCompletionItems returns all items for a completion call.
 // For paged endpoints it fetches all pages; for flat endpoints it calls once and extracts items.
 func fetchCompletionItems(ctx *cmdctx.Ctx, ep *spec.EndpointSpec) ([]any, error) {
@@ -466,165 +400,6 @@ func renderList(ctx *cmdctx.Ctx, ep *spec.EndpointSpec, items []any, meta *forma
 		listResult = unwrapped
 	}
 	return format.FormatArrayOutput(ctx.FormatFlags, ctx.IsPty, listResult, listItemsExpr, tspec, fields, exprEnv, meta)
-}
-
-// RunListWithCount fetches the first page and returns the total item count from the
-// response. ep.Paging must be non-nil and countable must be true.
-func RunListWithCount(ctx *cmdctx.Ctx, ep *spec.EndpointSpec) (int64, error) {
-	if ep.Paging.PagingStrategy == spec.PagingStrategyFlatList {
-		items, _, err := fetchFlatList(ctx, ep, 0, 0)
-		if err != nil {
-			return 0, err
-		}
-		return int64(len(items)), nil
-	}
-	if ep.Paging.PagingStrategy == spec.PagingStrategyPageIndex && ep.Paging.TotalExpr == "" {
-		return 0, fmt.Errorf("--count requires total_expr in paging spec for %s %s", ctx.Verb, ctx.Noun)
-	}
-	hlog.Debug("fetching count", "noun", ctx.Noun)
-	pd, err := fetchPage(ctx, ep, 0, 1)
-	if err != nil {
-		return 0, err
-	}
-	if !pd.hasTotal {
-		return 0, fmt.Errorf("total count not available for %s %s", ctx.Verb, ctx.Noun)
-	}
-	hlog.Debug("count resolved", "noun", ctx.Noun, "count", pd.total)
-	return pd.total, nil
-}
-
-// pageData holds the result of a single API page fetch.
-type pageData struct {
-	items    []any
-	last     bool
-	hasTotal bool
-	total    int64
-}
-
-// fetchPage calls the endpoint with the given pageIndex and pageSize injected as
-// query params, then extracts items, the done signal, and the total count.
-// It never slices or accumulates — that's the caller's job.
-func fetchPage(ctx *cmdctx.Ctx, ep *spec.EndpointSpec, pageIndex, pageSize int) (*pageData, error) {
-	pg := ep.Paging
-	if pg == nil {
-		return nil, fmt.Errorf("fetchPage called on endpoint with no paging spec")
-	}
-
-	paramName := pg.PageIndexParam
-	if paramName == "" {
-		paramName = "pageIndex"
-	}
-	extra := map[string]string{paramName: strconv.Itoa(pageIndex)}
-	if pg.PageSizeParam != "" && pageSize > 0 {
-		extra[pg.PageSizeParam] = strconv.Itoa(pageSize)
-	}
-
-	result, headers, err := callEndpointFull(ctx, ep, extra)
-	if err != nil {
-		hlog.Debug("fetchPage error", "noun", ctx.Noun, "path", ep.Path, "page_index", pageIndex, "err", err)
-		return nil, err
-	}
-
-	exprEnv := exprenv.WithIt(exprenv.Make(ctx), result)
-
-	items, err := exprenv.EvalItemsExpr(exprEnv, ep.ItemsExpr)
-	if err != nil {
-		hlog.Debug("items_expr did not resolve", "noun", ctx.Noun, "expr", ep.ItemsExpr, "err", err)
-		items = nil
-	}
-
-	hlog.Debug("fetchPage", "noun", ctx.Noun, "path", ep.Path, "page_index", pageIndex, "page_size", pageSize, "items", len(items))
-	pd := &pageData{items: items}
-
-	// Populate hasTotal/total from the model-specific source.
-	switch pg.PagingStrategy {
-	case spec.PagingStrategyPageHeader:
-		totalHeader := pg.TotalHeader
-		if totalHeader == "" {
-			totalHeader = "X-Total-Elements"
-		}
-		if v, err := strconv.ParseInt(headers.Get(totalHeader), 10, 64); err == nil {
-			pd.hasTotal, pd.total = true, v
-		} else if pg.IsCountable() {
-			return nil, fmt.Errorf("page_header: missing or invalid %s header", totalHeader)
-		}
-	case spec.PagingStrategyPageIndex:
-		if pg.TotalExpr != "" {
-			v, ok := exprenv.EvalExprAny(exprEnv, pg.TotalExpr)
-			if !ok {
-				return nil, fmt.Errorf("page_index: total_expr %q did not resolve", pg.TotalExpr)
-			}
-			n, err := toInt64(v)
-			if err != nil {
-				return nil, fmt.Errorf("page_index: total_expr %q resolved to unexpected type %T", pg.TotalExpr, v)
-			}
-			pd.hasTotal, pd.total = true, n
-		}
-	}
-
-	// Determine last page: any of these conditions is sufficient.
-	pd.last = len(items) == 0 ||
-		(pageSize > 0 && len(items) < pageSize) ||
-		(pd.hasTotal && int64((pageIndex+1)*pageSize) >= pd.total)
-
-	return pd, nil
-}
-
-// FetchRange fetches items [offset, offset+limit) from a paged endpoint.
-// It starts on the page that contains offset, so no wasted API calls for large offsets.
-// Fast path: if the entire window fits in one page from index 0, asks for exactly
-// wantEnd items instead of PageSizeMax.
-func FetchRange(ctx *cmdctx.Ctx, ep *spec.EndpointSpec, offset, limit int) ([]any, *format.PageMeta, error) {
-	pg := ep.Paging
-	if pg == nil {
-		return nil, nil, fmt.Errorf("FetchRange called on endpoint with no paging spec")
-	}
-
-	wantStart := offset
-	wantEnd := offset + limit
-	if wantEnd == 0 {
-		return nil, nil, nil
-	}
-
-	var size, startPage int
-	if wantEnd <= pg.PageSizeMax {
-		size = wantEnd
-		startPage = 0
-	} else {
-		size = pg.PageSizeMax
-		startPage = offset / size
-	}
-	pos := startPage * size
-
-	var out []any
-	meta := &format.PageMeta{Offset: offset}
-	for page := startPage; pos < wantEnd; page++ {
-		p, err := fetchPage(ctx, ep, page, size)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		if p.hasTotal && !meta.HasTotal {
-			meta.HasTotal = true
-			meta.Total = p.total
-		}
-
-		pageStart := pos
-		pageEnd := pos + len(p.items)
-		pos = pageEnd
-
-		lo := max(pageStart, wantStart) - pageStart
-		hi := min(pageEnd, wantEnd) - pageStart
-		if lo < hi {
-			out = append(out, p.items[lo:hi]...)
-		}
-
-		if p.last {
-			break
-		}
-	}
-	meta.Count = len(out)
-	return out, meta, nil
 }
 
 // runEndpointValidators runs all validators_endpoint declared on ep, in order.

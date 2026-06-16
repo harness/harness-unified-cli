@@ -32,6 +32,7 @@ var (
 	specRaw         = flagSpec{name: "raw", kind: flagKindBool, usage: "Output the full raw API response (only with --format json)"}
 	specFile        = flagSpec{name: "file", short: "f", usage: "Read request body from file, or - for stdin"}
 	specListColumns = flagSpec{name: "list-columns", kind: flagKindBool, usage: "Print available column IDs and exit (use with --columns to customize output)"}
+	specFields      = flagSpec{name: "fields", usage: `Fields to extract, tab-separated on one line, e.g. "name" or "name,git_url"`}
 	specListFields  = flagSpec{name: "list-fields", kind: flagKindBool, usage: "Print available field IDs and exit (use with --fields to customize output)"}
 	specPage        = flagSpec{name: "page", kind: flagKindInt, defInt: 1, usage: "Page number (1-indexed)"}
 	specLevel       = flagSpec{name: "level", defStr: "", usage: "Scope level: project, org, or account (overrides prefix on id)"}

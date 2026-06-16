@@ -123,6 +123,7 @@ type Resolver interface {
 type FormatFlags struct {
 	Format    string
 	Columns   string
+	Fields    string // --fields: comma-separated field IDs; outputs tab-separated values (get commands only)
 	NoHeaders bool
 	OutFile   string
 	Raw       bool

@@ -38,9 +38,16 @@ Output flags (list):
   --columns <ids or exprs>                      customize columns (e.g. "name,org" or "+tags")
   --list-columns                                print available column IDs for this command
 
+Paging flags (list):
+  --all                                         fetch all items
+  --limit <n>                                   max items to return (default 20)
+  --offset <n>                                  start at this item offset (default 0)
+  --count                                       print total count instead of results
+
 Output flags (get, create, update):
   --format text|json               output format (default: text)
   --json                           shorthand for --format json
+  --fields <ids>                   extract field values, tab-separated (e.g. "name,git_url"); for shell $() capture
   --list-fields                    print available field IDs for this command
 
 Examples:

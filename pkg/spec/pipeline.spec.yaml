@@ -561,7 +561,7 @@ commands:
         total_expr: it.data.totalElements
       completion:
         id_expr: it.planExecutionId
-        name_expr: '"Run #" + string(it.runSequence)'
+        name_expr: '"Run #" + string(it.runSequence) + " " + it.status + " " + epochMs(it.startTs)'
       query_params:
         pipelineIdentifier: ctx.parentId
         status: flags.status

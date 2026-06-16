@@ -109,6 +109,13 @@ func buildCtx(cmd *cobra.Command, cs *spec.CommandSpec, args []string, r *Regist
 		formatFlag = "json"
 	}
 	columnsFlag, _ := cmd.Flags().GetString("columns")
+	fieldsFlag, _ := cmd.Flags().GetString("fields")
+	if fieldsFlag != "" && jsonFlag {
+		return nil, fmt.Errorf("--fields and --json are mutually exclusive")
+	}
+	if fieldsFlag != "" && formatFlag != "" {
+		return nil, fmt.Errorf("--fields and --format are mutually exclusive")
+	}
 	noHeaders, _ := cmd.Flags().GetBool("no-headers")
 	outFile, _ := cmd.Flags().GetString("out")
 	rawFlag, _ := cmd.Flags().GetBool("raw")
@@ -133,6 +140,7 @@ func buildCtx(cmd *cobra.Command, cs *spec.CommandSpec, args []string, r *Regist
 		FormatFlags: cmdctx.FormatFlags{
 			Format:    formatFlag,
 			Columns:   columnsFlag,
+			Fields:    fieldsFlag,
 			NoHeaders: noHeaders,
 			OutFile:   outFile,
 			Raw:       rawFlag,

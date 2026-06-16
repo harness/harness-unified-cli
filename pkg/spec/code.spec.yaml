@@ -10,8 +10,8 @@ help_text: |
   ### Domain Model
 
   A repository is the top-level resource. Branches, tags, and commits live inside a
-  repository. A pull request targets a repository branch and has comments and activity
-  entries associated with it.
+  repository. A pull request targets a repository branch and has an activity timeline
+  (comments, reviews, state changes) and threaded comments associated with it.
 
   ### Nouns
 
@@ -27,6 +27,7 @@ nouns:
         expr: it.identifier
       - id: description
         expr: it.description
+        field_type: multiline_text
       - id: default_branch
         expr: it.default_branch
       - id: is_public
@@ -39,6 +40,29 @@ nouns:
         label: PRs
         expr: it.num_pulls
         align: right
+      - id: num_open_pulls
+        label: Open PRs
+        expr: it.num_open_pulls
+        align: right
+      - id: num_closed_pulls
+        label: Closed PRs
+        expr: it.num_closed_pulls
+        align: right
+      - id: num_merged_pulls
+        label: Merged PRs
+        expr: it.num_merged_pulls
+        align: right
+      - id: language
+        expr: it.language
+      - id: size
+        expr: it.size
+        align: right
+      - id: git_url
+        label: Git URL
+        expr: it.git_url
+      - id: url
+        label: URL
+        expr: url(it)
       - id: updated
         expr: epochMs(it.updated)
       - id: created
@@ -47,7 +71,7 @@ nouns:
   - noun: pr
     short_desc: A Harness Code pull request.
     noun_aliases: [prs, pull_request, pull_requests]
-    url_path: /ng/account/{{auth.account}}/module/code/orgs/{{auth.org}}/projects/{{auth.project}}/repos/{{it.source_repo_url}}/pulls/{{it.number}}
+    url_path: /ng/account/{{auth.account}}/all/code/orgs/{{auth.org}}/projects/{{auth.project}}/repos/{{ctx.idParts[0]}}/pulls/{{it.number}}/conversation
     fields:
       - id: number
         label: "#"
@@ -55,27 +79,81 @@ nouns:
         align: right
       - id: title
         expr: it.title
+      - id: description
+        expr: it.description
+        field_type: multiline_text
       - id: state
         expr: it.state
+      - id: is_draft
+        label: Draft
+        expr: it.is_draft
       - id: source_branch
-        label: Source
+        label: Source Branch
         expr: it.source_branch
       - id: target_branch
-        label: Target
+        label: Target Branch
         expr: it.target_branch
       - id: author
         expr: it.author.display_name
+      - id: author_email
+        label: Author Email
+        expr: it.author.email
+      - id: author_uid
+        label: Author UID
+        expr: it.author.uid
+      - id: merger
+        expr: it.merger.display_name
+      - id: merger_email
+        label: Merger Email
+        expr: it.merger.email
+      - id: merger_uid
+        label: Merger UID
+        expr: it.merger.uid
       - id: reviewers
         expr: it.stats.reviews.required_count
-        label: Req'd Reviews
+        label: Reqd Reviews
         align: right
       - id: approvals
         expr: it.stats.reviews.latest_approvals
         align: right
       - id: merge_strategy
         expr: it.merge_method
+      - id: merge_check_status
+        label: Merge Check
+        expr: it.merge_check_status
+      - id: rebase_check_status
+        label: Rebase Check
+        expr: it.rebase_check_status
+      - id: commits
+        expr: it.stats.commits
+        align: right
+      - id: conversations
+        expr: it.stats.conversations
+        align: right
+      - id: unresolved_count
+        label: Unresolved
+        expr: it.stats.unresolved_count
+        align: right
+      - id: files_changed
+        label: Files Changed
+        expr: it.stats.files_changed
+        align: right
+      - id: additions
+        expr: it.stats.additions
+        align: right
+      - id: deletions
+        expr: it.stats.deletions
+        align: right
+      - id: source_sha
+        label: Source SHA
+        expr: it.source_sha
+      - id: merge_base_sha
+        label: Merge Base SHA
+        expr: it.merge_base_sha
       - id: created
         expr: epochMs(it.created)
+      - id: edited
+        expr: epochMs(it.edited)
       - id: updated
         expr: epochMs(it.updated)
       - id: merged
@@ -89,6 +167,8 @@ nouns:
         expr: it.name
       - id: sha
         expr: it.sha
+      - id: sha8
+        expr: substr(it.sha, 0, 8)
       - id: is_default
         label: Default
         expr: it.is_default
@@ -109,12 +189,21 @@ nouns:
       - id: message
         expr: it.message
         width_max: 60
+      - id: title
+        expr: it.title
+        width_max: 60
       - id: author
         expr: it.author.identity.name
       - id: author_email
         expr: it.author.identity.email
       - id: authored
         expr: epochMs(it.author.when)
+      - id: committer
+        expr: it.committer.identity.name
+      - id: committer_email
+        expr: it.committer.identity.email
+      - id: committed
+        expr: epochMs(it.committer.when)
 
   - noun: tag
     short_desc: A git tag in a Harness Code repository.
@@ -133,18 +222,22 @@ nouns:
     fields:
       - id: id
         label: ID
-        expr: it.id
+        expr: int(it.id)
+      - id: order
+        expr: formatOrder(it.order, it.sub_order)
+        align: right
       - id: author
         expr: it.author.display_name
       - id: text
         expr: it.text
-        width_max: 80
+      - id: status
+        expr: it.status
+      - id: parent_id
+        expr: int(it.parent_id)
       - id: created
         expr: epochMs(it.created)
       - id: updated
         expr: epochMs(it.updated)
-      - id: resolved
-        expr: it.resolved
 
   - noun: pr_activity
     short_desc: Activity timeline entry on a pull request (comments, reviews, state changes).
@@ -152,18 +245,25 @@ nouns:
     fields:
       - id: id
         label: ID
-        expr: it.id
+        expr: int(it.id)
       - id: kind
         expr: it.kind
       - id: type
         expr: it.type
       - id: author
         expr: it.author.display_name
+      - id: author_email
+        expr: it.author.email
       - id: text
         expr: it.text
         width_max: 80
+      - id: order
+        expr: it.order
+        align: right
       - id: created
         expr: epochMs(it.created)
+      - id: edited
+        expr: epochMs(it.edited)
 
 commands:
   # ── repository ──────────────────────────────────────────────────────────────
@@ -186,16 +286,16 @@ commands:
         limit: flags.limit
       paging:
         paging_strategy: page_header
-        countable: true
-        total_header: x-total
+        countable: false
         page_index_param: page
         page_size_param: limit
         page_size_default: 30
         page_size_max: 100
+        page_base: 1
       completion:
         id_expr: it.identifier
         name_expr: it.identifier
-      columns: [identifier, default_branch, num_pulls, updated]
+      columns: [identifier, default_branch, num_open_pulls, updated]
 
   - command: get repository
     verb: get
@@ -241,7 +341,7 @@ commands:
   - command: delete repository
     verb: delete
     noun: repository
-    confirm_mode: prompt
+    confirm_mode: confirm_id
     short: Delete a repository
     handler_type: endpoint
     endpoint:
@@ -254,15 +354,16 @@ commands:
   - command: list pr
     verb: list
     noun: pr
-    short: "List pull requests for a repository: harness list pr <repo_id>"
+    short: "List pull requests for a repository: harness list pr <repo_id> [--state open|closed|merged|all]"
     handler_type: endpoint
     requires_parentid: true
     parentid_label: "<repo_id>"
+    completion_noun: repository
     flags:
       - name: state
-        description: "Filter by state: open, closed, merged"
-        default: open
-        completion_values: [open, closed, merged]
+        description: "Filter by state: open, closed, merged, all"
+        default: all
+        completion_values: [open, closed, merged, all]
       - name: search
         description: Filter by keyword
     endpoint:
@@ -270,7 +371,7 @@ commands:
       items_expr: it
       get_id_expr: string(it.number)
       query_params:
-        state: flags.state
+        state: 'flags.state == "all" ? "" : flags.state'
         query: flags.search
         page: flags.page
         limit: flags.limit
@@ -281,6 +382,11 @@ commands:
         page_size_param: limit
         page_size_default: 30
         page_size_max: 100
+        page_base: 1
+      completion:
+        id_expr: string(it.number)
+        name_expr: '"#" + string(it.number) + " " + it.title'
+        no_search_inject: true
       columns: [number, title, state, source_branch, target_branch, author, updated]
 
   - command: get pr
@@ -289,9 +395,14 @@ commands:
     short: "Get pull request details: harness get pr <repo_id>/<pr_number>"
     handler_type: endpoint
     id_parts: 2
+    completion_seq:
+      - completion_noun: repository
+      - completion_noun: pr
+        keep_order: true
     endpoint:
       path: /code/api/v1/repos/{{ctx.idParts[0]}}/pullreq/{{ctx.idParts[1]}}
       item_expr: it
+      text_footer: "\n{{url(it)}}\n"
 
   - command: create pr
     verb: create
@@ -336,6 +447,10 @@ commands:
     short: "Merge a pull request: harness execute pr:merge <repo_id>/<pr_number> [--method merge|squash|rebase|fast-forward]"
     handler_type: endpoint
     id_parts: 2
+    completion_seq:
+      - completion_noun: repository
+      - completion_noun: pr
+        keep_order: true
     flags:
       - name: method
         description: "Merge method: merge, squash, rebase, fast-forward"
@@ -350,10 +465,7 @@ commands:
     endpoint:
       method: POST
       path: /code/api/v1/repos/{{ctx.idParts[0]}}/pullreq/{{ctx.idParts[1]}}/merge
-      body_params:
-        method: flags.method
-        delete_source_branch: flags["delete-branch"]
-        dry_run: flags["dry-run"]
+      body_fn: merge_pr_body
       no_fields: true
       text_header: "\nMerged PR #{{ctx.idParts[1]}}\n"
 
@@ -364,6 +476,10 @@ commands:
     short: "Close a pull request: harness execute pr:close <repo_id>/<pr_number>"
     handler_type: endpoint
     id_parts: 2
+    completion_seq:
+      - completion_noun: repository
+      - completion_noun: pr
+        keep_order: true
     endpoint:
       method: POST
       path: /code/api/v1/repos/{{ctx.idParts[0]}}/pullreq/{{ctx.idParts[1]}}/state
@@ -399,7 +515,8 @@ commands:
         page_size_param: limit
         page_size_default: 30
         page_size_max: 100
-      columns: [name, sha, is_default, author, updated]
+        page_base: 1
+      columns: [name, sha8, is_default, author, updated]
 
   - command: get branch
     verb: get
@@ -407,6 +524,10 @@ commands:
     short: "Get branch details: harness get branch <repo_id>/<branch_name>"
     handler_type: endpoint
     id_parts: 2
+    completion_seq:
+      - completion_noun: repository
+      - completion_noun: branch
+        keep_order: true
     endpoint:
       path: /code/api/v1/repos/{{ctx.idParts[0]}}/branches/{{ctx.idParts[1]}}
       item_expr: it
@@ -448,6 +569,7 @@ commands:
     handler_type: endpoint
     requires_parentid: true
     parentid_label: "<repo_id>"
+    completion_noun: repository
     flags:
       - name: branch
         description: Git ref (branch/tag/SHA) to list commits from
@@ -469,7 +591,8 @@ commands:
         page_size_param: limit
         page_size_default: 20
         page_size_max: 100
-      columns: [sha, message, author, authored]
+        page_base: 1
+      columns: [sha, title, author, authored]
 
   - command: get commit
     verb: get
@@ -477,6 +600,10 @@ commands:
     short: "Get commit details: harness get commit <repo_id>/<sha>"
     handler_type: endpoint
     id_parts: 2
+    completion_seq:
+      - completion_noun: repository
+      - completion_noun: commit
+        keep_order: true
     endpoint:
       path: /code/api/v1/repos/{{ctx.idParts[0]}}/commits/{{ctx.idParts[1]}}
       item_expr: it
@@ -508,6 +635,7 @@ commands:
         page_size_param: limit
         page_size_default: 30
         page_size_max: 100
+        page_base: 1
       columns: [name, sha, message]
 
   - command: create tag
@@ -543,21 +671,23 @@ commands:
   - command: list pr_activity
     verb: list
     noun: pr_activity
-    short: "List PR activity (comments, reviews, state changes): harness list pr_activity <repo_id> --pr <pr_number>"
+    short: "List PR activity (comments, reviews, state changes): harness list pr_activity <repo_id>/<pr_number>"
     handler_type: endpoint
     requires_parentid: true
-    parentid_label: "<repo_id>"
+    parentid_label: "<repo_id>/<pr_number>"
+    id_parts: 2
+    completion_seq:
+      - completion_noun: repository
+      - completion_noun: pr
+        keep_order: true
     flags:
-      - name: pr
-        description: PR number
-        required: true
       - name: kind
         description: "Filter by kind: comment, system, change-comment"
         completion_values: [comment, system, change-comment]
       - name: type
         description: "Filter by type: comment, code-comment, review-submit, state-change, ..."
     endpoint:
-      path: /code/api/v1/repos/{{ctx.parentId}}/pullreq/{{flags.pr}}/activities
+      path: /code/api/v1/repos/{{ctx.parentIdParts[0]}}/pullreq/{{ctx.parentIdParts[1]}}/activities
       items_expr: it
       get_id_expr: "-"
       query_params:
@@ -567,3 +697,107 @@ commands:
       paging:
         paging_strategy: flat_list
       columns: [id, kind, type, author, text, created]
+
+  # ── pr_comment ───────────────────────────────────────────────────────────────
+
+  - command: list pr_comment
+    verb: list
+    noun: pr_comment
+    short: "List comments on a pull request: harness list pr_comment <repo_id>/<pr_number>"
+    handler_type: endpoint
+    requires_parentid: true
+    parentid_label: "<repo_id>/<pr_number>"
+    id_parts: 2
+    completion_seq:
+      - completion_noun: repository
+      - completion_noun: pr
+        keep_order: true
+    endpoint:
+      path: /code/api/v1/repos/{{ctx.parentIdParts[0]}}/pullreq/{{ctx.parentIdParts[1]}}/activities
+      items_expr: it
+      get_id_expr: string(it.id)
+      query_params:
+        kind: '"comment"'
+        limit: flags.limit
+      paging:
+        paging_strategy: flat_list
+      fields_extra:
+        - id: short_text
+          label: Short Text
+          expr: truncate(it.text, 60)
+          width_max: 63
+      completion:
+        id_expr: string(it.id)
+        name_expr: 'formatOrder(it.order, it.sub_order) + " " + it.author.display_name + ": " + truncate(it.text, 40)'
+        no_search_inject: true
+      columns: [id, order, author, short_text, status, created]
+
+  - command: create pr_comment
+    verb: create
+    noun: pr_comment
+    short: "Post a comment on a pull request: harness create pr_comment <repo_id>/<pr_number> -f <file>"
+    handler_type: endpoint
+    requires_id: true
+    id_parts: 2
+    id_label: "<repo_id>/<pr_number>"
+    completion_seq:
+      - completion_noun: repository
+      - completion_noun: pr
+        keep_order: true
+    flags:
+      - name: file
+        short: f
+        description: "Comment text file, or - to read from stdin"
+        required: true
+      - name: reply-to
+        description: Comment ID to reply to (creates a threaded reply)
+    endpoint:
+      method: POST
+      path: /code/api/v1/repos/{{ctx.idParts[0]}}/pullreq/{{ctx.idParts[1]}}/comments
+      body_fn: create_pr_comment_body
+      no_fields: true
+      text_header: "\nPosted comment #{{it.id}}\n"
+
+  - command: update pr_comment
+    verb: update
+    noun: pr_comment
+    short: "Edit a pull request comment: harness update pr_comment <repo_id>/<pr_number>/<comment_id> --set text=..."
+    handler_type: endpoint
+    id_parts: 3
+    id_label: "<repo_id>/<pr_number>/<comment_id>"
+    completion_seq:
+      - completion_noun: repository
+      - completion_noun: pr
+        keep_order: true
+      - completion_noun: pr_comment
+        keep_order: true
+    flags:
+      - name: text
+        description: New comment text
+    endpoint:
+      method: PATCH
+      path: /code/api/v1/repos/{{ctx.idParts[0]}}/pullreq/{{ctx.idParts[1]}}/comments/{{ctx.idParts[2]}}
+      body_params:
+        text: flags.text
+      no_fields: true
+      text_header: "\nUpdated comment #{{ctx.idParts[2]}}\n"
+
+  - command: delete pr_comment
+    verb: delete
+    noun: pr_comment
+    confirm_mode: prompt
+    short: "Delete a pull request comment: harness delete pr_comment <repo_id>/<pr_number>/<comment_id>"
+    handler_type: endpoint
+    id_parts: 3
+    id_label: "<repo_id>/<pr_number>/<comment_id>"
+    completion_seq:
+      - completion_noun: repository
+      - completion_noun: pr
+        keep_order: true
+      - completion_noun: pr_comment
+        keep_order: true
+    endpoint:
+      method: DELETE
+      path: /code/api/v1/repos/{{ctx.idParts[0]}}/pullreq/{{ctx.idParts[1]}}/comments/{{ctx.idParts[2]}}
+      item_expr: it
+

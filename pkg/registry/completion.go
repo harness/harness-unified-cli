@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/harness/harness-cli/pkg/auth"
+	"github.com/harness/harness-cli/pkg/cmdctx"
 	"github.com/harness/harness-cli/pkg/exprenv"
 	"github.com/harness/harness-cli/pkg/hlog"
 	"github.com/harness/harness-cli/pkg/plugin"
@@ -141,6 +142,7 @@ func (r *Registry) wireCompletion(cmd *cobra.Command, cs *spec.CommandSpec) {
 			hlog.Debug("completion error: buildCtx", "noun", targetNoun, "err", err)
 			return nil, cobra.ShellCompDirectiveError
 		}
+		injectSearchFlag(ctx, listSpec, cspec, toComplete)
 		items, err := fetchCompletionItems(ctx, ep)
 		if err != nil {
 			hlog.Debug("completion error: fetch", "noun", targetNoun, "err", err)
@@ -208,6 +210,7 @@ func (r *Registry) wireSeqCompletion(cmd *cobra.Command, cs *spec.CommandSpec) {
 				hlog.Debug("completion error: seq buildCtx", "stepNoun", step.CompletionNoun, "err", err)
 				return nil, cobra.ShellCompDirectiveError
 			}
+			injectSearchFlag(ctx, listSpec, cspec, parts[stepIdx])
 			items, err := fetchCompletionItems(ctx, ep)
 			if err != nil {
 				hlog.Debug("completion error: seq fetch", "stepNoun", step.CompletionNoun, "err", err)
@@ -345,6 +348,26 @@ func wireProfileCompletion(cmd *cobra.Command) {
 		}
 		return names, cobra.ShellCompDirectiveNoFileComp
 	})
+}
+
+// injectSearchFlag sets ctx.FlagValues["search"] = toComplete when the list spec
+// declares a "search" flag, mirroring how uitableview detects search support.
+func injectSearchFlag(ctx *cmdctx.Ctx, listSpec *spec.CommandSpec, cspec *spec.CompletionSpec, toComplete string) {
+	if toComplete == "" {
+		return
+	}
+	if cspec != nil && cspec.NoSearchInject {
+		return
+	}
+	for _, f := range listSpec.Flags {
+		if f.Name == "search" {
+			if ctx.FlagValues == nil {
+				ctx.FlagValues = map[string]any{}
+			}
+			ctx.FlagValues["search"] = toComplete
+			return
+		}
+	}
 }
 
 // extractCompletions applies id_expr/name_expr to pre-extracted items to produce completion strings.

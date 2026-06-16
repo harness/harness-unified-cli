@@ -143,6 +143,49 @@ func FormatArrayOutput(flags cmdctx.FormatFlags, isPty bool, data any, itemsExpr
 	return writeJSON(w, payload)
 }
 
+// FormatFieldsOutput extracts a comma-separated list of field IDs from a single-item response
+// and prints their values tab-separated on one line. Designed for shell $() capture.
+// Unknown field IDs are silently skipped (empty string).
+func FormatFieldsOutput(flags cmdctx.FormatFlags, data any, itemExpr string, fields []spec.FieldDef, fieldIDs []string, exprEnv map[string]any) error {
+	w, closeW, err := OpenWriter(flags.OutFile)
+	if err != nil {
+		return err
+	}
+	defer closeW()
+
+	payload := data
+	if !flags.Raw && itemExpr != "" {
+		extracted := evalColumnExpr(withIt(exprEnv, data), itemExpr)
+		if extracted == nil {
+			return nil
+		}
+		payload = extracted
+	}
+
+	byID := make(map[string]spec.FieldDef, len(fields))
+	for _, f := range fields {
+		byID[f.ID] = f
+	}
+
+	env := withIt(exprEnv, payload)
+	vals := make([]string, 0, len(fieldIDs))
+	for _, id := range fieldIDs {
+		f, ok := byID[id]
+		if !ok {
+			vals = append(vals, "")
+			continue
+		}
+		v := evalColumnExpr(env, f.DisplayExpr())
+		if v == nil {
+			vals = append(vals, "")
+		} else {
+			vals = append(vals, fmt.Sprintf("%v", v))
+		}
+	}
+	fmt.Fprintln(w, strings.Join(vals, "\t"))
+	return nil
+}
+
 // FormatSingleOutput renders a single-item response (get, execute, …).
 // itemExpr is an expr-lang expression unwrapped unless --raw is set. Use "it" for bare responses.
 // "it" is bound to the full response; ctx, auth, flags, and helpers are also available via exprEnv.
@@ -235,7 +278,7 @@ func BuildTextFieldFormatter(fields []spec.FieldDef, header, footer string, inte
 			items := make([]LabeledValue, 0, len(fields))
 			var yamlBlocks []string
 			for _, f := range fields {
-				if f.FieldType == "yaml" {
+				if f.FieldType == "multiline_text" || f.FieldType == "yaml" {
 					yamlBlocks = append(yamlBlocks, d.GetString(f.DisplayExpr()))
 					continue
 				}

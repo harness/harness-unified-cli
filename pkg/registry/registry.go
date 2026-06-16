@@ -14,6 +14,7 @@ import (
 
 	"github.com/harness/harness-cli/pkg/auth"
 	"github.com/harness/harness-cli/pkg/cmdctx"
+	"github.com/harness/harness-cli/pkg/endpoint"
 	"github.com/harness/harness-cli/pkg/console"
 	"github.com/harness/harness-cli/pkg/exprenv"
 	"github.com/harness/harness-cli/pkg/format"
@@ -628,7 +629,7 @@ func (r *Registry) FormatList(ctx *cmdctx.Ctx, rows []any, fields []spec.FieldDe
 
 // FetchItems implements cmdctx.Resolver.
 func (r *Registry) FetchItems(ctx *cmdctx.Ctx, ep *spec.EndpointSpec, pf cmdctx.PagingFlags) ([]any, error) {
-	items, _, err := FetchItems(ctx, ep, pf)
+	items, _, err := endpoint.FetchItems(ctx, ep, pf)
 	return items, err
 }
 
@@ -706,7 +707,15 @@ func (r *Registry) bindEndpointCmdFlags(cmd *cobra.Command, cs *spec.CommandSpec
 	case VerbList:
 		addFlags(cmd.Flags(), specFormat, specJson, specColumns, specNoHeaders, specRaw, specListColumns)
 	case VerbGet:
-		addFlags(cmd.Flags(), specFormat, specJson, specRaw, specListFields)
+		addFlags(cmd.Flags(), specFormat, specJson, specRaw, specFields, specListFields)
+		cmd.RegisterFlagCompletionFunc("fields", func(_ *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+			fields := r.ResolveCommandFields(cs)
+			ids := make([]string, 0, len(fields))
+			for _, f := range fields {
+				ids = append(ids, f.ID)
+			}
+			return ids, cobra.ShellCompDirectiveNoFileComp | cobra.ShellCompDirectiveNoSpace
+		})
 	case VerbUpdate:
 		if cs.BuiltinFlags.Set {
 			addFlags(cmd.Flags(), specFormat, specJson, specListFields)
