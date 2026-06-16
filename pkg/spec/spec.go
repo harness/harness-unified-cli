@@ -210,8 +210,9 @@ type TableColumn struct {
 // CompletionSpec drives dynamic tab-completion for the <id> positional argument.
 // IdExpr and NameExpr are expr-lang expressions evaluated against each item; "it" is bound to the item.
 type CompletionSpec struct {
-	IdExpr   string `yaml:"id_expr"`
-	NameExpr string `yaml:"name_expr"`
+	IdExpr         string `yaml:"id_expr"`
+	NameExpr       string `yaml:"name_expr"`
+	NoSearchInject bool   `yaml:"no_search_inject,omitempty"`
 }
 
 // CompletionSeqStep describes one segment of a slash-delimited multi-part ID completion.

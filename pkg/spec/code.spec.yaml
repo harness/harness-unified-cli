@@ -312,6 +312,10 @@ commands:
         page_size_param: limit
         page_size_default: 30
         page_size_max: 100
+      completion:
+        id_expr: string(it.number)
+        name_expr: '"#" + string(it.number) + " " + it.title'
+        no_search_inject: true
       columns: [number, title, state, source_branch, target_branch, author, updated]
 
   - command: get pr
