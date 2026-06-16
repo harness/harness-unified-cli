@@ -39,6 +39,29 @@ nouns:
         label: PRs
         expr: it.num_pulls
         align: right
+      - id: num_open_pulls
+        label: Open PRs
+        expr: it.num_open_pulls
+        align: right
+      - id: num_closed_pulls
+        label: Closed PRs
+        expr: it.num_closed_pulls
+        align: right
+      - id: num_merged_pulls
+        label: Merged PRs
+        expr: it.num_merged_pulls
+        align: right
+      - id: language
+        expr: it.language
+      - id: size
+        expr: it.size
+        align: right
+      - id: git_url
+        label: Git URL
+        expr: it.git_url
+      - id: url
+        label: URL
+        expr: url(it)
       - id: updated
         expr: epochMs(it.updated)
       - id: created
@@ -152,18 +175,25 @@ nouns:
     fields:
       - id: id
         label: ID
-        expr: it.id
+        expr: string(it.id)
       - id: kind
         expr: it.kind
       - id: type
         expr: it.type
       - id: author
         expr: it.author.display_name
+      - id: author_email
+        expr: it.author.email
       - id: text
         expr: it.text
         width_max: 80
+      - id: order
+        expr: it.order
+        align: right
       - id: created
         expr: epochMs(it.created)
+      - id: edited
+        expr: epochMs(it.edited)
 
 commands:
   # ── repository ──────────────────────────────────────────────────────────────
@@ -195,7 +225,7 @@ commands:
       completion:
         id_expr: it.identifier
         name_expr: it.identifier
-      columns: [identifier, default_branch, num_pulls, updated]
+      columns: [identifier, default_branch, num_open_pulls, updated]
 
   - command: get repository
     verb: get
@@ -241,7 +271,7 @@ commands:
   - command: delete repository
     verb: delete
     noun: repository
-    confirm_mode: prompt
+    confirm_mode: confirm_id
     short: Delete a repository
     handler_type: endpoint
     endpoint:
@@ -258,11 +288,12 @@ commands:
     handler_type: endpoint
     requires_parentid: true
     parentid_label: "<repo_id>"
+    completion_noun: repository
     flags:
       - name: state
-        description: "Filter by state: open, closed, merged"
+        description: "Filter by state: open, closed, merged, all"
         default: open
-        completion_values: [open, closed, merged]
+        completion_values: [open, closed, merged, all]
       - name: search
         description: Filter by keyword
     endpoint:
@@ -270,7 +301,7 @@ commands:
       items_expr: it
       get_id_expr: string(it.number)
       query_params:
-        state: flags.state
+        state: 'flags.state == "all" ? "" : flags.state'
         query: flags.search
         page: flags.page
         limit: flags.limit
@@ -289,6 +320,10 @@ commands:
     short: "Get pull request details: harness get pr <repo_id>/<pr_number>"
     handler_type: endpoint
     id_parts: 2
+    completion_seq:
+      - completion_noun: repository
+      - completion_noun: pr
+        keep_order: true
     endpoint:
       path: /code/api/v1/repos/{{ctx.idParts[0]}}/pullreq/{{ctx.idParts[1]}}
       item_expr: it
@@ -336,6 +371,10 @@ commands:
     short: "Merge a pull request: harness execute pr:merge <repo_id>/<pr_number> [--method merge|squash|rebase|fast-forward]"
     handler_type: endpoint
     id_parts: 2
+    completion_seq:
+      - completion_noun: repository
+      - completion_noun: pr
+        keep_order: true
     flags:
       - name: method
         description: "Merge method: merge, squash, rebase, fast-forward"
@@ -364,6 +403,10 @@ commands:
     short: "Close a pull request: harness execute pr:close <repo_id>/<pr_number>"
     handler_type: endpoint
     id_parts: 2
+    completion_seq:
+      - completion_noun: repository
+      - completion_noun: pr
+        keep_order: true
     endpoint:
       method: POST
       path: /code/api/v1/repos/{{ctx.idParts[0]}}/pullreq/{{ctx.idParts[1]}}/state
@@ -407,6 +450,10 @@ commands:
     short: "Get branch details: harness get branch <repo_id>/<branch_name>"
     handler_type: endpoint
     id_parts: 2
+    completion_seq:
+      - completion_noun: repository
+      - completion_noun: branch
+        keep_order: true
     endpoint:
       path: /code/api/v1/repos/{{ctx.idParts[0]}}/branches/{{ctx.idParts[1]}}
       item_expr: it
@@ -448,6 +495,7 @@ commands:
     handler_type: endpoint
     requires_parentid: true
     parentid_label: "<repo_id>"
+    completion_noun: repository
     flags:
       - name: branch
         description: Git ref (branch/tag/SHA) to list commits from
@@ -477,6 +525,10 @@ commands:
     short: "Get commit details: harness get commit <repo_id>/<sha>"
     handler_type: endpoint
     id_parts: 2
+    completion_seq:
+      - completion_noun: repository
+      - completion_noun: commit
+        keep_order: true
     endpoint:
       path: /code/api/v1/repos/{{ctx.idParts[0]}}/commits/{{ctx.idParts[1]}}
       item_expr: it
@@ -543,21 +595,23 @@ commands:
   - command: list pr_activity
     verb: list
     noun: pr_activity
-    short: "List PR activity (comments, reviews, state changes): harness list pr_activity <repo_id> --pr <pr_number>"
+    short: "List PR activity (comments, reviews, state changes): harness list pr_activity <repo_id>/<pr_number>"
     handler_type: endpoint
     requires_parentid: true
-    parentid_label: "<repo_id>"
+    parentid_label: "<repo_id>/<pr_number>"
+    id_parts: 2
+    completion_seq:
+      - completion_noun: repository
+      - completion_noun: pr
+        keep_order: true
     flags:
-      - name: pr
-        description: PR number
-        required: true
       - name: kind
         description: "Filter by kind: comment, system, change-comment"
         completion_values: [comment, system, change-comment]
       - name: type
         description: "Filter by type: comment, code-comment, review-submit, state-change, ..."
     endpoint:
-      path: /code/api/v1/repos/{{ctx.parentId}}/pullreq/{{flags.pr}}/activities
+      path: /code/api/v1/repos/{{ctx.parentIdParts[0]}}/pullreq/{{ctx.parentIdParts[1]}}/activities
       items_expr: it
       get_id_expr: "-"
       query_params:
