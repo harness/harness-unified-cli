@@ -369,9 +369,9 @@ commands:
       - name: author
         description: "Filter by author (principal ID number from user list)"
       - name: created-after
-        description: "Show PRs created after this date (YYYY-MM-DD or epoch ms)"
+        description: "Show PRs created after this date (YYYY-MM-DD, relative like 30d/2w/1m (m=month), or epoch ms)"
       - name: created-before
-        description: "Show PRs created before this date (YYYY-MM-DD or epoch ms)"
+        description: "Show PRs created before this date (YYYY-MM-DD, relative like 30d/2w/1m (m=month), or epoch ms)"
       - name: sort
         description: "Sort field: number, created, updated, edited, merged"
         default: number
