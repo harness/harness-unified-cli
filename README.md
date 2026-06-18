@@ -1,6 +1,6 @@
-# Harness CLI
+# Harness CLI - CLI For Humans and Agents
 
-A unified CLI for Harness. Manage pipelines, artifacts, platform resources, and more from the command line.
+A unified CLI for Harness ecosystem. Manage pipelines, artifacts, code, IaCM, platform resources, and more using the terminals and Agents.
 
 ---
 
