@@ -757,9 +757,10 @@ func (r *Registry) bindEndpointCmdFlags(cmd *cobra.Command, cs *spec.CommandSpec
 		addFlag(cmd.Flags(), specPage)
 	}
 	if ep.Paging != nil {
-		addFlags(cmd.Flags(), specOffset, specLimit, specAll)
-		if ep.Paging.IsCountable() {
-			addFlag(cmd.Flags(), specCount)
+		addFlags(cmd.Flags(), specOffset, specLimit, specAll, specCount)
+		if !ep.Paging.IsCountable() {
+			cmd.Flags().MarkHidden("all")
+			cmd.Flags().MarkHidden("count")
 		}
 	}
 	if cs.VerbHandler == VerbList && ep.Paging != nil {
@@ -930,15 +931,18 @@ func buildPagingFlags(flags *pflag.FlagSet, pg *spec.PagingSpec) (cmdctx.PagingF
 	offset, _ := flags.GetInt("offset")
 	limit, _ := flags.GetInt("limit")
 	all, _ := flags.GetBool("all")
-	count := false
-	if pg.IsCountable() {
-		count, _ = flags.GetBool("count")
-	}
+	count, _ := flags.GetBool("count")
 	if offset < 0 {
 		return cmdctx.PagingFlags{}, fmt.Errorf("--offset must be non-negative")
 	}
 	if limit < 0 {
 		return cmdctx.PagingFlags{}, fmt.Errorf("--limit must be non-negative")
+	}
+	if all && !pg.IsCountable() {
+		return cmdctx.PagingFlags{}, fmt.Errorf("--all is not supported for this resource")
+	}
+	if count && !pg.IsCountable() {
+		return cmdctx.PagingFlags{}, fmt.Errorf("--count is not supported for this resource")
 	}
 	if all && (offset != 0 || limit != 0) {
 		return cmdctx.PagingFlags{}, fmt.Errorf("--all is incompatible with --offset and --limit")
