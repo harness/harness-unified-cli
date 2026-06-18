@@ -51,7 +51,7 @@ func configureNpm(ctx *cmdctx.Ctx) error {
 		return err
 	}
 
-	if err := writeNpmrc(npmrcPath, registryURL, scope, a.Token); err != nil {
+	if err := writeNpmrc(npmrcPath, registryURL, scope, a.PATToken); err != nil {
 		return fmt.Errorf("writing .npmrc: %w", err)
 	}
 

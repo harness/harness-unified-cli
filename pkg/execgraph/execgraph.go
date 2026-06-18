@@ -115,7 +115,7 @@ func FetchExecutionGraph(hc *http.Client, a *auth.ResolvedAuth, execId string) (
 	if err != nil {
 		return ExecutionGraph{}, err
 	}
-	req.Header.Set("x-api-key", a.Token)
+	req.Header.Set("x-api-key", a.PATToken)
 	resp, err := hc.Do(req)
 	if err != nil {
 		return ExecutionGraph{}, err
@@ -157,7 +157,7 @@ func FetchExecutionFull(hc *http.Client, a *auth.ResolvedAuth, execId string) (E
 	if err != nil {
 		return ExecutionFull{}, err
 	}
-	req.Header.Set("x-api-key", a.Token)
+	req.Header.Set("x-api-key", a.PATToken)
 	resp, err := hc.Do(req)
 	if err != nil {
 		return ExecutionFull{}, err

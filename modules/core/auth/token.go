@@ -19,6 +19,6 @@ func TokenHandler(ctx *cmdctx.Ctx) error {
 		return err
 	}
 
-	fmt.Fprintln(os.Stdout, resolved.Token)
+	fmt.Fprintln(os.Stdout, resolved.PATToken)
 	return nil
 }

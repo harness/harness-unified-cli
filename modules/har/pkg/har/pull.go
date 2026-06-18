@@ -118,7 +118,7 @@ func pullGenericArtifact(ctx *cmdctx.Ctx) error {
 	if err != nil {
 		return fmt.Errorf("building request: %w", err)
 	}
-	setAuthHeader(req, ctx.Auth.Token)
+	setAuthHeader(req, ctx.Auth.PATToken)
 
 	resp, err := newHTTPClient().Do(req)
 	if err != nil {
@@ -200,4 +200,3 @@ func pullHelmArtifact(_ *cmdctx.Ctx) error {
 func pullDockerArtifact(_ *cmdctx.Ctx) error {
 	return fmt.Errorf("pull docker artifact: not yet implemented")
 }
-

@@ -72,7 +72,9 @@ func LoginHandler(ctx *cmdctx.Ctx) error {
 			existingURL := existingProfile.APIUrl
 			existingToken := ""
 			if creds, cerr := auth.LoadCredentials(); cerr == nil {
-				existingToken = creds[profileName]
+				if c := creds[profileName]; c != nil {
+					existingToken = c.Token
+				}
 			}
 			existing = &WizardExisting{APIURL: existingURL, Token: existingToken}
 		}

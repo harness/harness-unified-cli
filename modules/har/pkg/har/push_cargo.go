@@ -92,7 +92,7 @@ func pushCargoArtifact(ctx *cmdctx.Ctx) error {
 	if err != nil {
 		return fmt.Errorf("push cargo: building request: %w", err)
 	}
-	setAuthHeader(req, ctx.Auth.Token)
+	setAuthHeader(req, ctx.Auth.PATToken)
 	req.Header.Set("Content-Type", "application/octet-stream")
 	req.ContentLength = int64(len(payload))
 
@@ -192,7 +192,7 @@ func buildCargoPayload(name, version string, crateBytes []byte) ([]byte, error) 
 		return nil, fmt.Errorf("marshaling metadata: %w", err)
 	}
 
-	metaLen := uint32(len(metaJSON))   // #nosec G115
+	metaLen := uint32(len(metaJSON))    // #nosec G115
 	crateLen := uint32(len(crateBytes)) // #nosec G115
 
 	buf := make([]byte, 4+metaLen+4+crateLen)

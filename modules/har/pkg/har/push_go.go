@@ -23,7 +23,8 @@ import (
 //
 // ctx.Id      = "<registry>/<name>" where name is not used directly (registry identifies the target)
 // ctx.Args[0] = local directory path containing go.mod (option a), or ignored when all three
-//               --mod-file / --info-file / --zip-file flags are supplied (option b).
+//
+//	--mod-file / --info-file / --zip-file flags are supplied (option b).
 //
 // Required flag: --version  (e.g. "v1.2.3")
 // Optional flags: --mod-file, --info-file, --zip-file  (pre-built files; skips local generation)
@@ -118,7 +119,7 @@ func pushGoArtifact(ctx *cmdctx.Ctx) error {
 	if err != nil {
 		return fmt.Errorf("building request: %w", err)
 	}
-	setAuthHeader(req, ctx.Auth.Token)
+	setAuthHeader(req, ctx.Auth.PATToken)
 	req.Header.Set("Content-Type", mw.FormDataContentType())
 
 	if _, doErr := doRequest(newHTTPClient(), req); doErr != nil {

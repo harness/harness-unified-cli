@@ -227,7 +227,7 @@ func doIACM(ctx context.Context, hc *http.Client, a *auth.ResolvedAuth, method, 
 	if err != nil {
 		return err
 	}
-	req.Header.Set("x-api-key", a.Token)
+	req.Header.Set("x-api-key", a.PATToken)
 	req.Header.Set("harness-account", a.AccountID)
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
@@ -284,7 +284,7 @@ func uploadRemoteExecution(ctx context.Context, hc *http.Client, a *auth.Resolve
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("x-api-key", a.Token)
+	req.Header.Set("x-api-key", a.PATToken)
 	req.Header.Set("harness-account", a.AccountID)
 	req.Header.Set("Content-Digest", checksum)
 	req.Header.Set("Content-Type", "application/octet-stream")

@@ -118,12 +118,14 @@ func runStatusChecks(profileFlag string) statusResult {
 	}
 	r.Status.API = checkResult{OK: true}
 
-	if err := auth.ValidatePATFormat(resolved.Token); err != nil {
-		r.Status.User = checkResult{OK: false, Error: err.Error()}
-		r.Status.Account = skip
-		r.Status.Org = &skip
-		r.Status.Project = &skip
-		return r
+	if resolved.AuthType != auth.AuthTypeSSO {
+		if err := auth.ValidatePATFormat(resolved.PATToken); err != nil {
+			r.Status.User = checkResult{OK: false, Error: err.Error()}
+			r.Status.Account = skip
+			r.Status.Org = &skip
+			r.Status.Project = &skip
+			return r
+		}
 	}
 
 	c := &http.Client{Timeout: 10 * time.Second}
@@ -326,7 +328,7 @@ func checkAPIUrl(apiURL string) error {
 
 func fetchCurrentUser(c *http.Client, a *auth.ResolvedAuth) (any, error) {
 	url := fmt.Sprintf("%s/ng/api/user/currentUser?accountIdentifier=%s", a.APIUrl, a.AccountID)
-	body, status, err := doGet(c, url, a.Token)
+	body, status, err := doGet(c, url, a)
 	if err != nil {
 		return nil, err
 	}
@@ -348,7 +350,7 @@ func fetchCurrentUser(c *http.Client, a *auth.ResolvedAuth) (any, error) {
 
 func checkAccount(c *http.Client, a *auth.ResolvedAuth) (string, error) {
 	url := fmt.Sprintf("%s/ng/api/accounts/%s?accountIdentifier=%s", a.APIUrl, a.AccountID, a.AccountID)
-	body, status, err := doGet(c, url, a.Token)
+	body, status, err := doGet(c, url, a)
 	if err != nil {
 		return "", err
 	}
@@ -372,7 +374,7 @@ func checkAccount(c *http.Client, a *auth.ResolvedAuth) (string, error) {
 
 func checkOrg(c *http.Client, a *auth.ResolvedAuth) (string, error) {
 	url := fmt.Sprintf("%s/ng/api/organizations/%s?accountIdentifier=%s", a.APIUrl, a.OrgID, a.AccountID)
-	body, status, err := doGet(c, url, a.Token)
+	body, status, err := doGet(c, url, a)
 	if err != nil {
 		return "", err
 	}
@@ -397,7 +399,7 @@ func checkOrg(c *http.Client, a *auth.ResolvedAuth) (string, error) {
 func checkProject(c *http.Client, a *auth.ResolvedAuth) (string, error) {
 	url := fmt.Sprintf("%s/ng/api/projects/%s?accountIdentifier=%s&orgIdentifier=%s",
 		a.APIUrl, a.ProjectID, a.AccountID, a.OrgID)
-	body, status, err := doGet(c, url, a.Token)
+	body, status, err := doGet(c, url, a)
 	if err != nil {
 		return "", err
 	}
@@ -419,12 +421,16 @@ func checkProject(c *http.Client, a *auth.ResolvedAuth) (string, error) {
 	}
 }
 
-func doGet(c *http.Client, url, token string) ([]byte, int, error) {
+func doGet(c *http.Client, url string, a *auth.ResolvedAuth) ([]byte, int, error) {
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, 0, fmt.Errorf("building request: %w", err)
 	}
-	req.Header.Set("x-api-key", token)
+	if a.AuthType == auth.AuthTypeSSO {
+		req.Header.Set("Authorization", "Bearer "+a.SSOToken)
+	} else {
+		req.Header.Set("x-api-key", a.PATToken)
+	}
 
 	resp, err := c.Do(req)
 	if err != nil {

@@ -144,6 +144,16 @@ The CLI reads auth from the active profile (typically `~/.harness/profiles.yaml`
 | `pipeline.spec.yaml` | CI/CD pipelines |
 | `core.spec.yaml` | Core resources |
 
+## Security — never put real credentials in code or comments
+
+Do not hardcode into source files, comments, or documentation:
+- Account IDs, org IDs, project IDs
+- API tokens, OAuth tokens, client secrets
+- User emails, UUIDs, or any other PII
+- Real hostnames or URLs from live environments (unless they are published public endpoints like `id.harness.io`)
+
+Use placeholder text like `<accountId>`, `<token>`, `<email>` in examples.
+
 ## Common pitfalls
 
 - **Binary not updated**: `task build` alone isn't enough — must `cp` to `~/.local/bin/harness`.

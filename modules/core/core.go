@@ -12,6 +12,7 @@ import (
 const (
 	// auth
 	loginHandlerID    = "login"
+	loginSSOHandlerID = "loginsso"
 	logoutHandlerID   = "logout"
 	statusHandlerID   = "status"
 	setHandlerID      = "set"
@@ -32,6 +33,7 @@ const (
 
 func ModuleInit(reg registry.ModuleRegistrar) {
 	reg.RegisterWorkflow(loginHandlerID, auth.LoginHandler)
+	reg.RegisterWorkflow(loginSSOHandlerID, auth.LoginSSOHandler)
 	reg.RegisterWorkflow(logoutHandlerID, auth.LogoutHandler)
 	reg.RegisterWorkflow(statusHandlerID, auth.StatusHandler)
 	reg.RegisterWorkflow(setHandlerID, auth.SetHandler)

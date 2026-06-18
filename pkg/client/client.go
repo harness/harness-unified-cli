@@ -64,9 +64,9 @@ func APIErrorMessage(status int, body []byte) string {
 
 // Request describes a single HTTP request to the Harness API.
 type Request struct {
-	Method          string
-	Path            string
-	QueryParams     map[string]string
+	Method      string
+	Path        string
+	QueryParams map[string]string
 	// Body is always fully materialized: string → sent as-is with BodyContentType;
 	// any other type → JSON-marshaled, BodyContentType defaults to "application/json".
 	Body            any
@@ -128,6 +128,10 @@ func (c *Client) PutRaw(path string, queryParams map[string]string, body, conten
 // If Body is a string, it is sent as-is using BodyContentType. Otherwise Body is JSON-marshaled and
 // BodyContentType defaults to "application/json". Extra per-request headers may be set via Headers.
 func (c *Client) DoRequest(r Request) (any, http.Header, error) {
+	if err := auth.CheckAndUpdateAccessToken(c.resolved, time.Now()); err != nil {
+		return nil, nil, err
+	}
+
 	u, err := url.Parse(c.resolved.APIUrl + r.Path)
 	if err != nil {
 		return nil, nil, fmt.Errorf("building URL: %w", err)
@@ -166,7 +170,11 @@ func (c *Client) DoRequest(r Request) (any, http.Header, error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("creating API request: %w", err)
 	}
-	req.Header.Set("x-api-key", c.resolved.Token)
+	if c.resolved.AuthType == auth.AuthTypeSSO {
+		req.Header.Set("Authorization", "Bearer "+c.resolved.SSOToken)
+	} else {
+		req.Header.Set("x-api-key", c.resolved.PATToken)
+	}
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
 	}

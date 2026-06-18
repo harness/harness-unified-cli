@@ -50,9 +50,9 @@ const (
 type Event struct {
 	Kind    EventKind
 	Source  string
-	StartTs int64              // EvStart
+	StartTs int64               // EvStart
 	Node    execgraph.GraphNode // EvEnd
-	Lines   []string           // EvLogLine / EvBlob
+	Lines   []string            // EvLogLine / EvBlob
 }
 
 type LogKeyEntry struct {
@@ -122,7 +122,7 @@ func FetchAndPrintLog(hc *http.Client, a *auth.ResolvedAuth, shortKey, fmtFlag s
 	if err != nil {
 		return false, err
 	}
-	req.Header.Set("x-api-key", a.Token)
+	req.Header.Set("x-api-key", a.PATToken)
 
 	resp, err := hc.Do(req)
 	if err != nil {
@@ -152,9 +152,9 @@ func FetchAndPrintLog(hc *http.Client, a *auth.ResolvedAuth, shortKey, fmtFlag s
 // if the blob is empty and the step finished within 60s, it retries up to 3 times (2s apart).
 func FetchAndPrintLogWithRetry(hc *http.Client, a *auth.ResolvedAuth, shortKey, fmtFlag string, isPty bool, out io.Writer, endTs int64) (bool, error) {
 	const (
-		maxRetries   = 3
-		retryDelay   = 2 * time.Second
-		retryWindow  = 60 * time.Second
+		maxRetries  = 3
+		retryDelay  = 2 * time.Second
+		retryWindow = 60 * time.Second
 	)
 	age := time.Duration(-1)
 	if endTs > 0 {
@@ -308,7 +308,7 @@ func StreamSSEToChannel(ctx context.Context, hc *http.Client, a *auth.ResolvedAu
 	if err != nil {
 		return false, err
 	}
-	req.Header.Set("x-api-key", a.Token)
+	req.Header.Set("x-api-key", a.PATToken)
 	req.Header.Set("Accept", "text/event-stream")
 
 	resp, err := hc.Do(req)

@@ -17,12 +17,22 @@ import (
 	"github.com/harness/harness-cli/pkg/hbase"
 )
 
+// AuthType identifies how the token in the credentials file was obtained.
+// Empty string (existing profiles) is treated as AuthTypePAT.
+type AuthType = string
+
+const (
+	AuthTypePAT = "pat" // default; omitted from YAML for existing profiles
+	AuthTypeSSO = "sso" // OAuth2 JWT obtained via browser login
+)
+
 type Profile struct {
-	APIUrl      string `yaml:"api_url"`
-	AccountID   string `yaml:"account_id"`
-	OrgID       string `yaml:"org_id,omitempty"`
-	ProjectID   string `yaml:"project_id,omitempty"`
-	RegistryURL string `yaml:"registry_url,omitempty"`
+	APIUrl      string   `yaml:"api_url"`
+	AccountID   string   `yaml:"account_id"`
+	OrgID       string   `yaml:"org_id,omitempty"`
+	ProjectID   string   `yaml:"project_id,omitempty"`
+	RegistryURL string   `yaml:"registry_url,omitempty"`
+	AuthType    AuthType `yaml:"auth_type,omitempty"` // omitted for existing PAT profiles
 }
 
 type Config struct {
@@ -32,15 +42,20 @@ type Config struct {
 const SourceEnv = "env"
 
 // ResolvedAuth is the result of auth resolution — the active credentials for a command invocation.
-// Token is present but never printed; callers that display auth context must omit it.
+// Credential fields are never printed; callers that display auth context must omit them.
 type ResolvedAuth struct {
-	Source      string // "profile:<name>" or SourceEnv
+	Source      string   // "profile:<name>" or SourceEnv
+	AuthType    AuthType // AuthTypePAT or AuthTypeSSO
 	APIUrl      string
-	Token       string
 	AccountID   string
 	OrgID       string
 	ProjectID   string
 	RegistryURL string
+
+	// Exactly one of these is set depending on AuthType.
+	PATToken     string // set when AuthType == AuthTypePAT
+	SSOToken     string // set when AuthType == AuthTypeSSO
+	RefreshToken string // set when AuthType == AuthTypeSSO
 }
 
 func LoadConfig() (*Config, error) {
@@ -98,7 +113,7 @@ func Load(profileFlag string) (*ResolvedAuth, error) {
 		}
 		return &ResolvedAuth{
 			Source:      SourceEnv,
-			Token:       key,
+			PATToken:    key,
 			AccountID:   acct,
 			OrgID:       os.Getenv(hbase.EnvOrg),
 			ProjectID:   os.Getenv(hbase.EnvProject),
@@ -116,20 +131,26 @@ func Load(profileFlag string) (*ResolvedAuth, error) {
 
 // Validate checks that a ResolvedAuth is complete enough to make API calls.
 func Validate(r *ResolvedAuth) error {
-	if r.Token == "" {
-		return fmt.Errorf("no token found for profile — run 'harness login' to re-authenticate")
-	}
-	if err := ValidatePATFormat(r.Token); err != nil {
-		if r.Source == SourceEnv {
-			return fmt.Errorf("%s is invalid: %w", hbase.EnvAPIKey, err)
+	if r.AuthType == AuthTypeSSO {
+		if r.SSOToken == "" {
+			return fmt.Errorf("no token found for profile — run 'harness auth loginsso' to re-authenticate")
 		}
-		return fmt.Errorf("stored token is invalid — run 'harness login' to re-authenticate: %w", err)
-	}
-	if tokenAcct := AccountIDFromToken(r.Token); tokenAcct != "" && r.AccountID != tokenAcct {
-		if r.Source == SourceEnv {
-			return fmt.Errorf("%s %q does not match account in token %q", hbase.EnvAccount, r.AccountID, tokenAcct)
+	} else {
+		if r.PATToken == "" {
+			return fmt.Errorf("no token found for profile — run 'harness auth login' to re-authenticate")
 		}
-		return fmt.Errorf("stored account %q does not match token — run 'harness login' to re-authenticate", r.AccountID)
+		if err := ValidatePATFormat(r.PATToken); err != nil {
+			if r.Source == SourceEnv {
+				return fmt.Errorf("%s is invalid: %w", hbase.EnvAPIKey, err)
+			}
+			return fmt.Errorf("stored token is invalid — run 'harness auth login' to re-authenticate: %w", err)
+		}
+		if tokenAcct := AccountIDFromToken(r.PATToken); tokenAcct != "" && r.AccountID != tokenAcct {
+			if r.Source == SourceEnv {
+				return fmt.Errorf("%s %q does not match account in token %q", hbase.EnvAccount, r.AccountID, tokenAcct)
+			}
+			return fmt.Errorf("stored account %q does not match token — run 'harness auth login' to re-authenticate", r.AccountID)
+		}
 	}
 	if r.OrgID == "" {
 		if r.Source == SourceEnv {
@@ -166,7 +187,7 @@ func resolveProfile(name string) (*ResolvedAuth, error) {
 	p, ok := cfg.Profiles[name]
 	if !ok {
 		if name == "default" {
-			return nil, errors.New("not logged in — run 'harness login' to get started")
+			return nil, errors.New("not logged in — run 'harness auth login' to get started")
 		}
 		return nil, fmt.Errorf("profile %q not found", name)
 	}
@@ -174,9 +195,9 @@ func resolveProfile(name string) (*ResolvedAuth, error) {
 	if err != nil {
 		return nil, fmt.Errorf("loading credentials: %w", err)
 	}
-	token := creds[name]
-	if token == "" {
-		return nil, fmt.Errorf("no token found for profile %q — run 'harness login' to re-authenticate", name)
+	profileCreds := creds[name]
+	if profileCreds == nil || profileCreds.Token == "" {
+		return nil, fmt.Errorf("no token found for profile %q — run 'harness auth login' to re-authenticate", name)
 	}
 	apiURL := p.APIUrl
 	if apiURL == "" {
@@ -186,15 +207,26 @@ func resolveProfile(name string) (*ResolvedAuth, error) {
 	if registryURL == "" {
 		registryURL = hbase.DefaultRegistryURL
 	}
-	return &ResolvedAuth{
+	authType := p.AuthType
+	if authType == "" {
+		authType = AuthTypePAT
+	}
+	r := &ResolvedAuth{
 		Source:      "profile:" + name,
+		AuthType:    authType,
 		APIUrl:      apiURL,
-		Token:       token,
 		AccountID:   p.AccountID,
 		OrgID:       p.OrgID,
 		ProjectID:   p.ProjectID,
 		RegistryURL: registryURL,
-	}, nil
+	}
+	if authType == AuthTypeSSO {
+		r.SSOToken = profileCreds.Token
+		r.RefreshToken = profileCreds.RefreshToken
+	} else {
+		r.PATToken = profileCreds.Token
+	}
+	return r, nil
 }
 
 // ValidateAPIURL returns an error if apiURL is not a parseable URL with a host.

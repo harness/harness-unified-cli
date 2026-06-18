@@ -119,19 +119,19 @@ type npmAttachment struct {
 
 // npmUploadPayload is the full JSON body sent to the npm upload endpoint.
 type npmUploadPayload struct {
-	ID          string                       `json:"_id"`
-	Name        string                       `json:"name"`
-	Description interface{}                  `json:"description,omitempty"`
-	DistTags    map[string]string            `json:"dist-tags"`
-	Versions    map[string]*npmVersionEntry  `json:"versions"`
-	Readme      string                       `json:"readme,omitempty"`
-	License     interface{}                  `json:"license,omitempty"`
-	Homepage    interface{}                  `json:"homepage,omitempty"`
-	Keywords    []string                     `json:"keywords,omitempty"`
-	Repository  interface{}                  `json:"repository,omitempty"`
-	Author      interface{}                  `json:"author,omitempty"`
-	Bugs        interface{}                  `json:"bugs,omitempty"`
-	Attachments map[string]*npmAttachment    `json:"_attachments"`
+	ID          string                      `json:"_id"`
+	Name        string                      `json:"name"`
+	Description interface{}                 `json:"description,omitempty"`
+	DistTags    map[string]string           `json:"dist-tags"`
+	Versions    map[string]*npmVersionEntry `json:"versions"`
+	Readme      string                      `json:"readme,omitempty"`
+	License     interface{}                 `json:"license,omitempty"`
+	Homepage    interface{}                 `json:"homepage,omitempty"`
+	Keywords    []string                    `json:"keywords,omitempty"`
+	Repository  interface{}                 `json:"repository,omitempty"`
+	Author      interface{}                 `json:"author,omitempty"`
+	Bugs        interface{}                 `json:"bugs,omitempty"`
+	Attachments map[string]*npmAttachment   `json:"_attachments"`
 }
 
 // pushNpmArtifact implements "push artifact <registry/name> <local.tgz>" for npm packages.
@@ -276,7 +276,7 @@ func pushNpmArtifact(ctx *cmdctx.Ctx) error {
 	if err != nil {
 		return fmt.Errorf("building request: %w", err)
 	}
-	setAuthHeader(req, ctx.Auth.Token)
+	setAuthHeader(req, ctx.Auth.PATToken)
 	req.Header.Set("Content-Type", "application/json")
 
 	if sums, sumErr := computeFileChecksums(localFile); sumErr == nil {

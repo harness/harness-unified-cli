@@ -47,10 +47,10 @@ type mavenCoords struct {
 
 // mavenMetadataXML is a minimal representation of maven-metadata.xml.
 type mavenMetadataXML struct {
-	XMLName    xml.Name          `xml:"metadata"`
-	GroupID    string            `xml:"groupId"`
-	ArtifactID string            `xml:"artifactId"`
-	Versioning mavenVersioning   `xml:"versioning"`
+	XMLName    xml.Name        `xml:"metadata"`
+	GroupID    string          `xml:"groupId"`
+	ArtifactID string          `xml:"artifactId"`
+	Versioning mavenVersioning `xml:"versioning"`
 }
 
 type mavenVersioning struct {
@@ -62,8 +62,9 @@ type mavenVersioning struct {
 // pushMavenArtifact implements "push artifact" for Maven (.jar/.war) packages.
 //
 // Required:
-//   ctx.Args[0]           = local .jar or .war file path
-//   --pom-file flag       = path to the project-level pom.xml or .pom file
+//
+//	ctx.Args[0]           = local .jar or .war file path
+//	--pom-file flag       = path to the project-level pom.xml or .pom file
 //
 // The function:
 //  1. Validates the jar/war and pom file paths.
@@ -384,7 +385,7 @@ func mavenPutFile(ctx *cmdctx.Ctx, client *http.Client, registry, groupPath stri
 	if err != nil {
 		return fmt.Errorf("building request: %w", err)
 	}
-	setAuthHeader(req, ctx.Auth.Token)
+	setAuthHeader(req, ctx.Auth.PATToken)
 	req.Header.Set("Content-Type", contentType)
 	req.ContentLength = fi.Size()
 
@@ -407,7 +408,7 @@ func mavenPutBytes(ctx *cmdctx.Ctx, client *http.Client, registry, groupPath str
 	if err != nil {
 		return fmt.Errorf("building request: %w", err)
 	}
-	setAuthHeader(req, ctx.Auth.Token)
+	setAuthHeader(req, ctx.Auth.PATToken)
 	req.Header.Set("Content-Type", contentType)
 	req.ContentLength = int64(len(content))
 
@@ -450,7 +451,7 @@ func updateMavenMetadata(ctx *cmdctx.Ctx, client *http.Client, registry, groupPa
 	if err != nil {
 		return fmt.Errorf("building metadata GET request: %w", err)
 	}
-	setAuthHeader(getReq, ctx.Auth.Token)
+	setAuthHeader(getReq, ctx.Auth.PATToken)
 
 	getResp, err := client.Do(getReq)
 	if err != nil {
@@ -523,7 +524,7 @@ func putBytesToURL(ctx *cmdctx.Ctx, client *http.Client, targetURL string, conte
 	if err != nil {
 		return fmt.Errorf("building request: %w", err)
 	}
-	setAuthHeader(req, ctx.Auth.Token)
+	setAuthHeader(req, ctx.Auth.PATToken)
 	req.Header.Set("Content-Type", contentType)
 	req.ContentLength = int64(len(content))
 

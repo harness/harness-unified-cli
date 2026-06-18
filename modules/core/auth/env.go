@@ -27,7 +27,7 @@ func EnvHandler(ctx *cmdctx.Ctx) error {
 	}
 
 	vars := []struct{ k, v string }{
-		{hbase.EnvAPIKey, resolved.Token},
+		{hbase.EnvAPIKey, resolved.PATToken},
 		{hbase.EnvAccount, resolved.AccountID},
 		{hbase.EnvAPIURL, resolved.APIUrl},
 	}

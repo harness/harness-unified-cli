@@ -108,6 +108,24 @@ commands:
         is_bool: true
         description: Skip token validation against the API
 
+  - command: auth loginsso
+    verb: auth
+    noun: loginsso
+    short: Log in via browser SSO (OAuth2)
+    hidden: true
+    no_auth: true
+    handler_type: workflow
+    workflow_id: loginsso
+    flags:
+      - name: profile
+        description: Profile name to save credentials under (default "default")
+      - name: overwrite
+        is_bool: true
+        description: Overwrite existing profile without prompting
+      - name: no-overwrite
+        is_bool: true
+        description: Error if profile already exists
+
   - command: auth setscope
     verb: auth
     noun: setscope

@@ -13,7 +13,7 @@ import (
 	"github.com/harness/harness-cli/pkg/hbase"
 )
 
-// custom "toml" parser for the single token field
+// custom "toml" parser for credentials fields
 // if this ever gets more complicated (or requires quoting/unquoting arbitrary strings) we should switch to a real TOML parser
 
 const credentialsHeader = `# Harness credentials — contains sensitive tokens
@@ -22,13 +22,18 @@ const credentialsHeader = `# Harness credentials — contains sensitive tokens
 
 `
 
-// LoadCredentials reads ~/.harness/credentials and returns a map of profile → token.
+type ProfileCredentials struct {
+	Token        string
+	RefreshToken string // only present for SSO profiles
+}
+
+// LoadCredentials reads ~/.harness/credentials and returns a map of profile → credentials.
 // Returns an empty map if the file does not exist.
-func LoadCredentials() (map[string]string, error) {
+func LoadCredentials() (map[string]*ProfileCredentials, error) {
 	path := hbase.GetCredentialsFilePath()
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
-		return map[string]string{}, nil
+		return map[string]*ProfileCredentials{}, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("reading credentials: %w", err)
@@ -37,8 +42,8 @@ func LoadCredentials() (map[string]string, error) {
 }
 
 // parseCredentials parses a minimal TOML-like file: [section] / key = "value".
-func parseCredentials(content string) (map[string]string, error) {
-	result := map[string]string{}
+func parseCredentials(content string) (map[string]*ProfileCredentials, error) {
+	result := map[string]*ProfileCredentials{}
 	current := ""
 	scanner := bufio.NewScanner(strings.NewReader(content))
 	for scanner.Scan() {
@@ -59,32 +64,49 @@ func parseCredentials(content string) (map[string]string, error) {
 		}
 		k = strings.TrimSpace(k)
 		v = strings.TrimSpace(v)
-		// unquote simple double-quoted strings
 		if len(v) >= 2 && v[0] == '"' && v[len(v)-1] == '"' {
 			v = v[1 : len(v)-1]
 		}
-		if k == "token" {
-			result[current] = v
+		if result[current] == nil {
+			result[current] = &ProfileCredentials{}
+		}
+		switch k {
+		case "token", "pat_token":
+			result[current].Token = v
+		case "sso_token":
+			result[current].Token = v
+		case "refresh_token":
+			result[current].RefreshToken = v
 		}
 	}
 	return result, scanner.Err()
 }
 
 // SaveCredentials writes the credentials map to ~/.harness/credentials with 0600 perms.
-func SaveCredentials(creds map[string]string) error {
+func SaveCredentials(creds map[string]*ProfileCredentials) error {
 	path := hbase.GetCredentialsFilePath()
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return fmt.Errorf("creating credentials dir: %w", err)
 	}
 	var sb strings.Builder
 	sb.WriteString(credentialsHeader)
-	for name, token := range creds {
+	for name, c := range creds {
 		sb.WriteString("[")
 		sb.WriteString(name)
 		sb.WriteString("]\n")
-		sb.WriteString("token = \"")
-		sb.WriteString(token)
-		sb.WriteString("\"\n\n")
+		if c.RefreshToken != "" {
+			sb.WriteString("sso_token = \"")
+			sb.WriteString(c.Token)
+			sb.WriteString("\"\n")
+			sb.WriteString("refresh_token = \"")
+			sb.WriteString(c.RefreshToken)
+			sb.WriteString("\"\n")
+		} else {
+			sb.WriteString("pat_token = \"")
+			sb.WriteString(c.Token)
+			sb.WriteString("\"\n")
+		}
+		sb.WriteString("\n")
 	}
 	return os.WriteFile(path, []byte(sb.String()), 0600)
 }
@@ -95,7 +117,20 @@ func SetCredential(profileName, token string) error {
 	if err != nil {
 		return err
 	}
-	creds[profileName] = token
+	if creds[profileName] == nil {
+		creds[profileName] = &ProfileCredentials{}
+	}
+	creds[profileName].Token = token
+	return SaveCredentials(creds)
+}
+
+// SetSSOCredentials saves both the access token and refresh token for an SSO profile.
+func SetSSOCredentials(profileName, token, refreshToken string) error {
+	creds, err := LoadCredentials()
+	if err != nil {
+		return err
+	}
+	creds[profileName] = &ProfileCredentials{Token: token, RefreshToken: refreshToken}
 	return SaveCredentials(creds)
 }
 

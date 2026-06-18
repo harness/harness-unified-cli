@@ -4,13 +4,10 @@
 package auth
 
 import (
-	"encoding/json"
+	"context"
 	"fmt"
-	"io"
-	"net/http"
 	"sort"
 	"strings"
-	"time"
 
 	"charm.land/bubbles/v2/list"
 	"charm.land/bubbles/v2/spinner"
@@ -19,6 +16,7 @@ import (
 	"charm.land/lipgloss/v2"
 
 	pkgauth "github.com/harness/harness-cli/pkg/auth"
+	hclient "github.com/harness/harness-cli/pkg/client"
 	"github.com/harness/harness-cli/pkg/cmdctx"
 )
 
@@ -137,13 +135,15 @@ type wizardModel struct {
 	// pre-selected values (for set-wizard mode)
 	currentOrgID     string
 	currentProjectID string
-	setMode          bool // started at org pick; no URL/token steps
+	setMode          bool             // started at org pick; no URL/token steps
+	authType         pkgauth.AuthType // AuthTypePAT or AuthTypeSSO
 
-	cmdCtx    *cmdctx.Ctx
-	err       string
-	cancelled bool
-	width     int
-	height    int
+	cmdCtx       *cmdctx.Ctx
+	err          string
+	cancelled    bool
+	cancelReason error // set when cancelled due to an internal error, not user action
+	width        int
+	height       int
 }
 
 func buildURLOpts(existingAPIURL string) (opts []urlOpt, defaultIdx int) {
@@ -350,6 +350,7 @@ func (m wizardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.setMode {
 				m.err = msg.err.Error()
 				m.cancelled = true
+				m.cancelReason = msg.err
 				return m, tea.Quit
 			}
 			m.step = stepToken
@@ -630,7 +631,7 @@ func (m wizardModel) fetchOrgs() tea.Cmd {
 	token := m.token
 	accountID := m.accountID
 	return func() tea.Msg {
-		orgs, err := fetchOrgItems(cmdCtx, apiURL, token, accountID)
+		orgs, err := fetchOrgItems(cmdCtx, apiURL, token, accountID, m.authType)
 		return orgsDoneMsg{orgs: orgs, err: err}
 	}
 }
@@ -642,7 +643,7 @@ func (m wizardModel) fetchProjects() tea.Cmd {
 	accountID := m.accountID
 	orgID := m.orgID
 	return func() tea.Msg {
-		projects, err := fetchProjectItems(cmdCtx, apiURL, token, accountID, orgID)
+		projects, err := fetchProjectItems(cmdCtx, apiURL, token, accountID, orgID, m.authType)
 		return projectsDoneMsg{projects: projects, err: err}
 	}
 }
@@ -651,18 +652,14 @@ func (m wizardModel) fetchProjects() tea.Cmd {
 
 // fetchOrgItems fetches all organizations via the framework's FetchItems, falling back
 // to a direct HTTP call when no resolver is available (e.g. during login before auth exists).
-func fetchOrgItems(ctx *cmdctx.Ctx, apiURL, token, accountID string) ([]orgItem, error) {
+func fetchOrgItems(ctx *cmdctx.Ctx, apiURL, token, accountID string, authType pkgauth.AuthType) ([]orgItem, error) {
 	if ctx.Resolver != nil {
 		cs := ctx.Resolver.GetSpec("list", "organization")
 		if cs != nil && cs.Endpoint != nil && cs.Endpoint.Paging != nil {
 			fetchCtx := *ctx
 			fetchCtx.Verb = "list"
 			fetchCtx.Noun = "organization"
-			fetchCtx.Auth = &pkgauth.ResolvedAuth{
-				APIUrl:    apiURL,
-				Token:     token,
-				AccountID: accountID,
-			}
+			fetchCtx.Auth = newLoginResolvedAuth(apiURL, token, accountID, "", authType)
 			items, err := ctx.Resolver.FetchItems(&fetchCtx, cs.Endpoint, cmdctx.PagingFlags{All: true})
 			if err != nil {
 				return nil, fmt.Errorf("fetching organizations: %w", err)
@@ -670,24 +667,19 @@ func fetchOrgItems(ctx *cmdctx.Ctx, apiURL, token, accountID string) ([]orgItem,
 			return orgItemsFromRaw(items, "it.organization.identifier", "it.organization.name")
 		}
 	}
-	return fetchOrgsHTTP(apiURL, token, accountID)
+	return fetchOrgsClient(apiURL, token, accountID, authType)
 }
 
 // fetchProjectItems fetches all projects for the given org via the framework's FetchItems,
 // falling back to direct HTTP when no resolver is available.
-func fetchProjectItems(ctx *cmdctx.Ctx, apiURL, token, accountID, orgID string) ([]orgItem, error) {
+func fetchProjectItems(ctx *cmdctx.Ctx, apiURL, token, accountID, orgID string, authType pkgauth.AuthType) ([]orgItem, error) {
 	if ctx.Resolver != nil {
 		cs := ctx.Resolver.GetSpec("list", "project")
 		if cs != nil && cs.Endpoint != nil && cs.Endpoint.Paging != nil {
 			fetchCtx := *ctx
 			fetchCtx.Verb = "list"
 			fetchCtx.Noun = "project"
-			fetchCtx.Auth = &pkgauth.ResolvedAuth{
-				APIUrl:    apiURL,
-				Token:     token,
-				AccountID: accountID,
-				OrgID:     orgID,
-			}
+			fetchCtx.Auth = newLoginResolvedAuth(apiURL, token, accountID, orgID, authType)
 			items, err := ctx.Resolver.FetchItems(&fetchCtx, cs.Endpoint, cmdctx.PagingFlags{All: true})
 			if err != nil {
 				return nil, fmt.Errorf("fetching projects: %w", err)
@@ -695,7 +687,22 @@ func fetchProjectItems(ctx *cmdctx.Ctx, apiURL, token, accountID, orgID string) 
 			return orgItemsFromRaw(items, "it.project.identifier", "it.project.name")
 		}
 	}
-	return fetchProjectsHTTP(apiURL, token, accountID, orgID)
+	return fetchProjectsClient(apiURL, token, accountID, orgID, authType)
+}
+
+func newLoginResolvedAuth(apiURL, token, accountID, orgID string, authType pkgauth.AuthType) *pkgauth.ResolvedAuth {
+	ra := &pkgauth.ResolvedAuth{
+		APIUrl:    apiURL,
+		AuthType:  authType,
+		AccountID: accountID,
+		OrgID:     orgID,
+	}
+	if authType == pkgauth.AuthTypeSSO {
+		ra.SSOToken = token
+	} else {
+		ra.PATToken = token
+	}
+	return ra
 }
 
 // orgItemsFromRaw maps raw FetchItems results to []orgItem using the completion exprs
@@ -745,30 +752,15 @@ func validateAndFetch(apiURL, token string) (accountID, regURL string, err error
 	if accountID == "" {
 		return "", "", fmt.Errorf("token does not look like a Harness PAT (expected pat.<accountID>.<...>)")
 	}
-
-	c := &http.Client{Timeout: 10 * time.Second}
-
-	// validate token
-	url := fmt.Sprintf("%s/ng/api/accounts/%s?accountIdentifier=%s", apiURL, accountID, accountID)
-	req, _ := http.NewRequest("GET", url, nil)
-	req.Header.Set("x-api-key", token)
-	resp, rerr := c.Do(req)
-	if rerr != nil {
-		return "", "", fmt.Errorf("cannot reach %s: %w", apiURL, rerr)
+	c := hclient.New(context.Background(), &pkgauth.ResolvedAuth{
+		APIUrl:    apiURL,
+		AuthType:  pkgauth.AuthTypePAT,
+		PATToken:  token,
+		AccountID: accountID,
+	})
+	if _, _, err := c.Get(fmt.Sprintf("/ng/api/accounts/%s", accountID), map[string]string{"accountIdentifier": accountID}); err != nil {
+		return "", "", err
 	}
-	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
-	switch resp.StatusCode {
-	case 200:
-	case 401:
-		return "", "", fmt.Errorf("token rejected (401) — check your PAT")
-	case 403:
-		return "", "", fmt.Errorf("access denied (403) — check account ID or RBAC")
-	default:
-		return "", "", fmt.Errorf("validation failed (%d): %s", resp.StatusCode, truncate(string(body), 120))
-	}
-
-	// fetch registry URL (best-effort)
 	regURL, _ = fetchRegistryURL(apiURL, token, accountID)
 	return accountID, regURL, nil
 }
@@ -781,76 +773,68 @@ func accountIDFromToken(token string) string {
 	return ""
 }
 
-// fetchOrgsHTTP is the raw HTTP fallback used when no resolver is available.
-type orgRespHTTP struct {
-	Data struct {
-		Content []struct {
-			Organization struct {
-				Identifier string `json:"identifier"`
-				Name       string `json:"name"`
-			} `json:"organization"`
-		} `json:"content"`
-	} `json:"data"`
+func newLoginClient(apiURL, token, accountID string, authType pkgauth.AuthType) *hclient.Client {
+	ra := &pkgauth.ResolvedAuth{
+		APIUrl:    apiURL,
+		AuthType:  authType,
+		AccountID: accountID,
+	}
+	if authType == pkgauth.AuthTypeSSO {
+		ra.SSOToken = token
+	} else {
+		ra.PATToken = token
+	}
+	return hclient.New(context.Background(), ra)
 }
 
-func fetchOrgsHTTP(apiURL, token, accountID string) ([]orgItem, error) {
-	c := &http.Client{Timeout: 15 * time.Second}
-	url := fmt.Sprintf("%s/ng/api/organizations?accountIdentifier=%s&pageSize=200", apiURL, accountID)
-	req, _ := http.NewRequest("GET", url, nil)
-	req.Header.Set("x-api-key", token)
-	resp, err := c.Do(req)
+func fetchOrgsClient(apiURL, token, accountID string, authType pkgauth.AuthType) ([]orgItem, error) {
+	c := newLoginClient(apiURL, token, accountID, authType)
+	resp, _, err := c.Get("/ng/api/organizations", map[string]string{
+		"accountIdentifier": accountID,
+		"pageSize":          "200",
+	})
 	if err != nil {
 		return nil, fmt.Errorf("fetching organizations: %w", err)
 	}
-	defer resp.Body.Close()
-	b, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("organizations API error (%d)", resp.StatusCode)
-	}
-	var parsed orgRespHTTP
-	if err := json.Unmarshal(b, &parsed); err != nil {
-		return nil, fmt.Errorf("decoding organizations: %w", err)
-	}
-	out := make([]orgItem, 0, len(parsed.Data.Content))
-	for _, row := range parsed.Data.Content {
-		out = append(out, orgItem{id: row.Organization.Identifier, name: row.Organization.Name})
-	}
-	sort.Slice(out, func(i, j int) bool { return strings.ToLower(out[i].name) < strings.ToLower(out[j].name) })
-	return out, nil
+	return orgItemsFromResponse(resp, "organization")
 }
 
-type projectRespHTTP struct {
-	Data struct {
-		Content []struct {
-			Project struct {
-				Identifier string `json:"identifier"`
-				Name       string `json:"name"`
-			} `json:"project"`
-		} `json:"content"`
-	} `json:"data"`
-}
-
-func fetchProjectsHTTP(apiURL, token, accountID, orgID string) ([]orgItem, error) {
-	c := &http.Client{Timeout: 15 * time.Second}
-	url := fmt.Sprintf("%s/ng/api/projects?accountIdentifier=%s&orgIdentifier=%s&pageSize=200", apiURL, accountID, orgID)
-	req, _ := http.NewRequest("GET", url, nil)
-	req.Header.Set("x-api-key", token)
-	resp, err := c.Do(req)
+func fetchProjectsClient(apiURL, token, accountID, orgID string, authType pkgauth.AuthType) ([]orgItem, error) {
+	c := newLoginClient(apiURL, token, accountID, authType)
+	resp, _, err := c.Get("/ng/api/projects", map[string]string{
+		"accountIdentifier": accountID,
+		"orgIdentifier":     orgID,
+		"pageSize":          "200",
+	})
 	if err != nil {
 		return nil, fmt.Errorf("fetching projects: %w", err)
 	}
-	defer resp.Body.Close()
-	b, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("projects API error (%d)", resp.StatusCode)
+	return orgItemsFromResponse(resp, "project")
+}
+
+func orgItemsFromResponse(resp any, key string) ([]orgItem, error) {
+	m, ok := resp.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("unexpected response type")
 	}
-	var parsed projectRespHTTP
-	if err := json.Unmarshal(b, &parsed); err != nil {
-		return nil, fmt.Errorf("decoding projects: %w", err)
-	}
-	out := make([]orgItem, 0, len(parsed.Data.Content))
-	for _, row := range parsed.Data.Content {
-		out = append(out, orgItem{id: row.Project.Identifier, name: row.Project.Name})
+	data, _ := m["data"].(map[string]any)
+	content, _ := data["content"].([]any)
+	out := make([]orgItem, 0, len(content))
+	for _, row := range content {
+		rm, ok := row.(map[string]any)
+		if !ok {
+			continue
+		}
+		inner, _ := rm[key].(map[string]any)
+		id, _ := inner["identifier"].(string)
+		name, _ := inner["name"].(string)
+		if id == "" {
+			continue
+		}
+		if name == "" {
+			name = id
+		}
+		out = append(out, orgItem{id: id, name: name})
 	}
 	sort.Slice(out, func(i, j int) bool { return strings.ToLower(out[i].name) < strings.ToLower(out[j].name) })
 	return out, nil
@@ -888,6 +872,7 @@ type SetWizardInput struct {
 	APIURL    string
 	Token     string
 	AccountID string
+	AuthType  pkgauth.AuthType
 	RegURL    string
 	OrgID     string
 	ProjectID string
@@ -896,6 +881,11 @@ type SetWizardInput struct {
 // RunSetWizard starts the wizard at the org-pick step using already-validated credentials.
 // Pre-selects the currently saved org and project. Returns (nil, nil) if cancelled.
 func RunSetWizard(ctx *cmdctx.Ctx, in *SetWizardInput) (*WizardResult, error) {
+	orgs, err := fetchOrgItems(ctx, in.APIURL, in.Token, in.AccountID, in.AuthType)
+	if err != nil {
+		return nil, err
+	}
+
 	st := newWizardStyles()
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
@@ -915,15 +905,29 @@ func RunSetWizard(ctx *cmdctx.Ctx, in *SetWizardInput) (*WizardResult, error) {
 		return l
 	}
 
+	orgListModel := newList("Select an organization")
+	orgItems := make([]list.Item, len(orgs))
+	for i, o := range orgs {
+		orgItems[i] = o
+	}
+	orgListModel.SetItems(orgItems)
+	for i, o := range orgs {
+		if o.id == in.OrgID {
+			orgListModel.Select(i)
+			break
+		}
+	}
+
 	m := wizardModel{
 		st:               st,
-		step:             stepOrgLoad,
+		step:             stepOrgPick,
 		spin:             sp,
-		orgList:          newList("Select an organization"),
+		orgList:          orgListModel,
 		projList:         newList("Select a project"),
 		apiURL:           in.APIURL,
 		token:            in.Token,
 		accountID:        in.AccountID,
+		authType:         in.AuthType,
 		regURL:           in.RegURL,
 		currentOrgID:     in.OrgID,
 		currentProjectID: in.ProjectID,
@@ -940,7 +944,7 @@ func RunSetWizard(ctx *cmdctx.Ctx, in *SetWizardInput) (*WizardResult, error) {
 	}
 	fm := final.(wizardModel)
 	if fm.cancelled || fm.step != stepDone {
-		return nil, nil
+		return nil, fm.cancelReason
 	}
 	return &WizardResult{
 		APIURL:  fm.apiURL,
