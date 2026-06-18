@@ -123,7 +123,7 @@ func PrintFieldTable(w io.Writer, fields []spec.FieldDef) error {
 // ResolveCommandFields returns the effective []FieldDef for a CommandSpec: noun fields
 // (respecting fields_noun), filtered by fields_subset, with fields_extra appended.
 func (r *Registry) ResolveCommandFields(cs *spec.CommandSpec) []spec.FieldDef {
-	if cs.Endpoint == nil || cs.Endpoint.NoFields {
+	if cs == nil || cs.Endpoint == nil || cs.Endpoint.NoFields {
 		return nil
 	}
 	noun := cs.Noun
