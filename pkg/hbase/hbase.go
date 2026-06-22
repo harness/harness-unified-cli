@@ -38,6 +38,9 @@ const (
 	// EnvNoUpdateCheck disables the background update check when set to "1".
 	EnvNoUpdateCheck = "HARNESS_NO_UPDATE_CHECK"
 
+	// EnvNoTelemetry disables all usage telemetry when set to "1".
+	EnvNoTelemetry = "HARNESS_NO_TELEMETRY"
+
 	// Env var names for env-var auth mode.
 	EnvAPIKey      = "HARNESS_API_KEY"
 	EnvAccount     = "HARNESS_ACCOUNT"

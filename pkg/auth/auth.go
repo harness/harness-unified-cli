@@ -35,7 +35,8 @@ type Profile struct {
 }
 
 type Config struct {
-	Profiles map[string]*Profile `yaml:"profiles"`
+	Profiles         map[string]*Profile `yaml:"profiles"`
+	DisableTelemetry bool                `yaml:"disable_telemetry,omitempty"`
 }
 
 const SourceEnv = "env"
@@ -229,7 +230,7 @@ func resolveProfile(name string) (*ResolvedAuth, error) {
 }
 
 var (
-	hostLabelRE  = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?$`)
+	hostLabelRE   = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?$`)
 	harnessHostRE = regexp.MustCompile(`^https://([A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?\.)+harness\.io$`)
 	harnessNameRE = regexp.MustCompile(`^([A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?\.)+harness\.io$`)
 )
