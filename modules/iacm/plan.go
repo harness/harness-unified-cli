@@ -85,6 +85,7 @@ func executeWorkspaceHandler(ctx *cmdctx.Ctx) error {
 		if cfg.Project != "" {
 			projectID = cfg.Project
 		}
+		fmt.Printf("Using workspace from .harness/workspace.yaml: %s\n", workspaceID)
 	}
 	if workspaceID == "" {
 		return errors.New("workspace-id is required (pass as argument or set in .harness/workspace.yaml)")

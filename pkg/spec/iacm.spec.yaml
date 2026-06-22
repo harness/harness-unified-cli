@@ -83,13 +83,11 @@ commands:
     noun: workspace
     short: Execute a remote Terraform plan on a workspace
     id_label: "<workspace-id>"
+    no_id: true
     completion_noun: workspace
     handler_type: workflow
     workflow_id: execute_workspace
     flags:
-      - name: plan
-        description: "Execute a Terraform plan (default operation)"
-        is_bool: true
       - name: target
         description: "Resource target (can be specified multiple times)"
         is_multi: true
