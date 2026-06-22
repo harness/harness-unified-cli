@@ -351,11 +351,11 @@ nouns:
       - id: identifier
         expr: it.connector.identifier
       - id: name
-        expr: it.connector.name
+        path: it.connector.name
       - id: type
-        expr: it.connector.type
+        path: it.connector.type
       - id: description
-        expr: it.connector.description
+        path: it.connector.description
       - id: status
         expr: it.status.status
       - id: last_connected_at
@@ -1036,6 +1036,7 @@ commands:
       set: true
     endpoint:
       method: POST
+      file_body: required
       path: /ng/api/connectors
       create_strategy: set-fields
       create_body_init:
