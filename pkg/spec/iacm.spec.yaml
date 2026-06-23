@@ -82,6 +82,21 @@ commands:
     verb: execute
     noun: workspace
     short: Execute a remote Terraform plan on a workspace
+    long: |
+      Execute a remote Terraform plan on an IaCM workspace.
+
+      The workspace ID is optional. If omitted, the command reads it from
+      .harness/workspace.yaml in the current directory:
+
+        org_id:       <your-org>        # optional; overrides --org flag
+        project_id:   <your-project>    # optional; overrides --project flag
+        workspace_id: <your-workspace>  # required if no ID is passed as an argument
+
+      Examples:
+        harness execute workspace my-workspace              # explicit workspace ID
+        harness execute workspace                           # reads .harness/workspace.yaml
+        harness execute workspace --target aws_instance.web # limit plan to one resource
+        harness execute workspace --force                   # skip confirmation prompt
     id_label: "<workspace-id>"
     no_id: true
     completion_noun: workspace
