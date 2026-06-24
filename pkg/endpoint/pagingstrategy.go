@@ -187,7 +187,7 @@ func (pageHeaderStrategy) ExtractPaging(_ *cmdctx.Ctx, ep *spec.EndpointSpec, ra
 
 	pr.Last = len(items) == 0 ||
 		(d.pageSize > 0 && len(items) < d.pageSize) ||
-		(int64(d.startOffset+len(items)) >= pr.Total)
+		(pr.HasTotal && int64(d.startOffset+len(items)) >= pr.Total)
 
 	return pr, nil
 }
