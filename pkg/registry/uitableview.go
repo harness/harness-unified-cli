@@ -461,8 +461,8 @@ func (m uiTableModel) fetchDetail(id string) tea.Cmd {
 // detailView renders the drilldown detail overlay.
 func (m uiTableModel) detailView() string {
 	var b strings.Builder
-	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("99"))
-	subtleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(tui.CLIAccent))
+	subtleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(tui.CLITextMuted))
 
 	noun := strings.ReplaceAll(m.getCs.Noun, "_", " ")
 	title := fmt.Sprintf("get %s  %s", noun, m.detail.id)
@@ -477,7 +477,7 @@ func (m uiTableModel) detailView() string {
 	if m.detail.loading {
 		b.WriteString(subtleStyle.Render("  Loading…") + "\n")
 	} else if m.detail.err != "" {
-		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Render("  error: "+m.detail.err) + "\n")
+		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(tui.CLIError)).Render("  error: "+m.detail.err) + "\n")
 	} else {
 		end := m.detail.scroll + visRows
 		if end > len(m.detail.lines) {
@@ -500,10 +500,10 @@ func (m uiTableModel) detailView() string {
 // colPickView renders the interactive column picker overlay.
 func (m uiTableModel) colPickView() string {
 	var b strings.Builder
-	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("99"))
-	subtleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
-	cursorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("86")).Bold(true)
-	checkedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("99")).Bold(true)
+	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(tui.CLIAccent))
+	subtleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(tui.CLITextMuted))
+	cursorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(tui.CLIAccent)).Bold(true)
+	checkedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(tui.CLIAccent)).Bold(true)
 
 	b.WriteString(titleStyle.Render("  columns") + "\n\n")
 
@@ -745,8 +745,8 @@ func (m uiTableModel) View() tea.View {
 	var b strings.Builder
 
 	if m.height < uiMinHeight || m.width < uiMinWidth {
-		errStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
-		subtleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+		errStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(tui.CLIError))
+		subtleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(tui.CLITextMuted))
 		b.WriteString(errStyle.Render("  terminal too small") + "\n")
 		b.WriteString(subtleStyle.Render(fmt.Sprintf("  min %dx%d  current %dx%d", uiMinWidth, uiMinHeight, m.width, m.height)) + "\n")
 		b.WriteString(subtleStyle.Render("  q quit") + "\n")
@@ -769,8 +769,8 @@ func (m uiTableModel) View() tea.View {
 		return v
 	}
 
-	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("99"))
-	subtleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(tui.CLIAccent))
+	subtleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(tui.CLITextMuted))
 
 	titleLine := m.titleLine
 	if m.pickerMode && m.cmdPreviewVerb != "" {
@@ -815,13 +815,13 @@ func (m uiTableModel) View() tea.View {
 }
 
 func (m uiTableModel) statusBar() string {
-	subtle := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
-	accent := lipgloss.NewStyle().Foreground(lipgloss.Color("99")).Bold(true)
+	subtle := lipgloss.NewStyle().Foreground(lipgloss.Color(tui.CLITextMuted))
+	accent := lipgloss.NewStyle().Foreground(lipgloss.Color(tui.CLIAccent)).Bold(true)
 
 	clip := func(s string) string { return tui.TruncateANSI(s, m.width-1) }
 
 	if m.err != "" {
-		return clip(lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Render("  error: "+m.err)) + "\n"
+		return clip(lipgloss.NewStyle().Foreground(lipgloss.Color(tui.CLIError)).Render("  error: "+m.err)) + "\n"
 	}
 
 	if m.searchMode {

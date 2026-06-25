@@ -113,7 +113,7 @@ func PrintFieldTable(w io.Writer, fields []spec.FieldDef) error {
 	t := format.NewTable()
 	t.AppendHeader(table.Row{"ID", "Label", "Expr"})
 	for _, f := range fields {
-		t.AppendRow(table.Row{f.ID, fieldLabel(f), f.DisplayExpr()})
+		t.AppendRow(table.Row{f.ID, fieldLabel(f), f.Expr})
 	}
 	t.SetOutputMirror(w)
 	t.Render()
@@ -155,14 +155,14 @@ func (r *Registry) ResolveCommandFields(cs *spec.CommandSpec) []spec.FieldDef {
 	return append(base, ep.FieldsExtra...)
 }
 
-// MutableFields returns only the path-based (writable) fields for a noun.
+// MutableFields returns only the writable fields for a noun (those with mutable_path set).
 func MutableFields(noun *spec.NounDef) []spec.FieldDef {
 	if noun == nil {
 		return nil
 	}
 	var out []spec.FieldDef
 	for _, f := range noun.Fields {
-		if f.Path != "" {
+		if f.MutablePath != "" {
 			out = append(out, f)
 		}
 	}
@@ -207,7 +207,7 @@ func buildTspec(columnIDs []string, fields []spec.FieldDef) *spec.TableSpec {
 	if len(columnIDs) > 0 {
 		for _, id := range columnIDs {
 			if f, ok := byID[id]; ok {
-				cols = append(cols, spec.TableColumn{Header: fieldLabel(f), Expr: f.DisplayExpr(), Align: f.Align, FieldType: f.FieldType, WidthMax: f.WidthMax})
+				cols = append(cols, spec.TableColumn{Header: fieldLabel(f), Expr: f.Expr, Align: f.Align, FieldType: f.FieldType, WidthMax: f.WidthMax})
 			}
 		}
 	} else {
@@ -223,7 +223,7 @@ func buildTspec(columnIDs []string, fields []spec.FieldDef) *spec.TableSpec {
 func FieldsToTableColumns(fields []spec.FieldDef) []spec.TableColumn {
 	cols := make([]spec.TableColumn, len(fields))
 	for i, f := range fields {
-		cols[i] = spec.TableColumn{Header: fieldLabel(f), Expr: f.DisplayExpr(), Align: f.Align, FieldType: f.FieldType, WidthMax: f.WidthMax}
+		cols[i] = spec.TableColumn{Header: fieldLabel(f), Expr: f.Expr, Align: f.Align, FieldType: f.FieldType, WidthMax: f.WidthMax}
 	}
 	return cols
 }

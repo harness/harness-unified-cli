@@ -108,6 +108,7 @@ commands:
     endpoint:
       path: /pm/api/v1/policies/{{ctx.id}}
       item_expr: it
+      yaml_pick_expr: it
 
   - command: create policy
     verb: create
@@ -137,6 +138,7 @@ commands:
       del: true
     endpoint:
       method: PATCH
+      file_body: optional
       path: /pm/api/v1/policies/{{ctx.id}}
       update_strategy: get-then-put
       update_body_pick: it
@@ -192,6 +194,7 @@ commands:
     endpoint:
       path: /pm/api/v1/policysets/{{ctx.id}}
       item_expr: it
+      yaml_pick_expr: it
 
   - command: create policy_set
     verb: create
@@ -222,6 +225,7 @@ commands:
       del: true
     endpoint:
       method: PATCH
+      file_body: optional
       path: /pm/api/v1/policysets/{{ctx.id}}
       update_strategy: get-then-put
       update_body_pick: it

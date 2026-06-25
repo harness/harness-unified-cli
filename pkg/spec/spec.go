@@ -7,6 +7,7 @@ import (
 	"embed"
 	"fmt"
 	"io/fs"
+	"strings"
 )
 
 // ModuleOrder defines the preferred display order for known modules.
@@ -87,6 +88,7 @@ type Flag struct {
 	IsBool           bool     `yaml:"is_bool,omitempty"`           // if true, declares a bool flag instead of a string flag
 	IsArray          bool     `yaml:"is_array,omitempty"`          // if true, value is parsed as []string: comma-separated or JSON array syntax
 	IsMulti          bool     `yaml:"is_multi,omitempty"`          // if true, registers as StringArray (repeatable: --flag v1 --flag v2)
+	Hidden           bool     `yaml:"hidden,omitempty"`            // if true, flag is registered but not shown in --help output
 	CompletionNoun   string   `yaml:"completion_noun,omitempty"`   // list noun to call for dynamic tab-completion
 	CompletionFn     string   `yaml:"completion_fn,omitempty"`     // registered FlagCompletionFn name (overrides completion_noun)
 	CompletionValues []string `yaml:"completion_values,omitempty"` // static list of completion values (overrides completion_noun/fn)
@@ -144,16 +146,12 @@ type FieldDef struct {
 	// Label is the human-readable column header / text label.
 	// When omitted, auto-derived from ID by replacing underscores with spaces and title-casing.
 	Label string `yaml:"label,omitempty"`
-	// Expr is an expr-lang expression evaluated against the item ("it").
-	// Set for read-only fields; mutually exclusive with Path.
+	// Expr is a required expr-lang expression evaluated against the item ("it") for display.
 	Expr string `yaml:"expr,omitempty"`
-	// Path is the dot-path to the value in the item (e.g. "it.project.name").
-	// When set, the field is editable and participates in update commands.
-	// Mutually exclusive with Expr.
-	Path string `yaml:"path,omitempty"`
-	// FormatExpr is an optional expr-lang expression for display formatting of editable fields.
-	// When absent, Path is used as the display expression. "it" is bound to the full item.
-	FormatExpr string `yaml:"format_expr,omitempty"`
+	// MutablePath is the dot-path relative to the update_body_pick subtree (e.g. "name",
+	// "spec.value"). Must not start with "it.". Its presence marks the field as writable
+	// and should match update_body_pick on the corresponding update command.
+	MutablePath string `yaml:"mutable_path,omitempty"`
 	// FieldType optionally changes how the value is rendered or updated.
 	// Supported: "multiline_text" (renders raw block below other fields), "yaml" (alias for multiline_text, use for actual YAML content),
 	// "tags" (tag-map handling), "set" (string-set handling), "ts" (epoch-ms timestamp).
@@ -167,30 +165,14 @@ type FieldDef struct {
 }
 
 // Validate checks that the field definition is internally consistent.
-// Returns an error if both Expr and Path are set, or if neither is set.
 func (f FieldDef) Validate() error {
-	if f.Expr != "" && f.Path != "" {
-		return fmt.Errorf("field %q: expr and path are mutually exclusive", f.ID)
+	if f.Expr == "" {
+		return fmt.Errorf("field %q: expr is required", f.ID)
 	}
-	if f.Expr == "" && f.Path == "" {
-		return fmt.Errorf("field %q: must set either expr or path", f.ID)
-	}
-	if f.FormatExpr != "" && f.Path == "" {
-		return fmt.Errorf("field %q: format_expr requires path (not valid on read-only expr fields)", f.ID)
+	if strings.HasPrefix(f.MutablePath, "it.") {
+		return fmt.Errorf("field %q: mutable_path must not start with \"it.\" (it is relative to the update_body_pick subtree)", f.ID)
 	}
 	return nil
-}
-
-// DisplayExpr returns the expr-lang expression to use for display/rendering.
-// Precedence: FormatExpr > Path > Expr.
-func (f FieldDef) DisplayExpr() string {
-	if f.FormatExpr != "" {
-		return f.FormatExpr
-	}
-	if f.Path != "" {
-		return f.Path
-	}
-	return f.Expr
 }
 
 // TableSpec is a declarative table definition used internally by the rendering layer.
@@ -356,8 +338,9 @@ type EndpointSpec struct {
 	// "get-then-put-kv": GET a [{key,value}] array, apply --set/--del by key, then PUT the full array.
 	// Only valid when method is PUT.
 	UpdateStrategy string `yaml:"update_strategy,omitempty"`
-	// UpdateBodyPick is an expr evaluated against the GET response to extract the
-	// mutable subtree before mutation and re-wrap. e.g. "it.project"
+	// UpdateBodyPick is an expr evaluated against the raw GET response root ("it" = full
+	// response) to extract the mutable subtree before mutation and re-wrap. e.g. "it.data.project".
+	// Should match yaml_pick_expr on the corresponding get command (they describe the same subtree).
 	UpdateBodyPick string `yaml:"update_body_pick,omitempty"`
 	// UpdateBodyWrap is the key name used to re-wrap the picked subtree in the PUT body.
 	// e.g. "project" → PUT body becomes {"project": <mutated subtree>}

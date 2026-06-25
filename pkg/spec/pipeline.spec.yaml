@@ -387,6 +387,7 @@ commands:
       method: PUT
       path: /pipeline/api/pipelines/v2/{{ctx.id}}
       file_body: required
+      content_type: application/yaml
       no_fields: true
       text_header: "\nUpdated pipeline {{ctx.id}}\n"
 

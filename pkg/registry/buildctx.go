@@ -103,16 +103,23 @@ func (r *Registry) buildCompletionCtx(cmd *cobra.Command, verb, noun, parentId s
 func buildCtx(cmd *cobra.Command, cs *spec.CommandSpec, args []string, r *Registry) (*cmdctx.Ctx, error) {
 	formatFlag, _ := cmd.Flags().GetString("format")
 	jsonFlag, _ := cmd.Flags().GetBool("json")
-	if jsonFlag && formatFlag != "" {
-		return nil, fmt.Errorf("--json and --format are mutually exclusive")
+	yamlFlag, _ := cmd.Flags().GetBool("yaml")
+	if jsonFlag && yamlFlag {
+		return nil, fmt.Errorf("--json and --yaml are mutually exclusive")
+	}
+	if (jsonFlag || yamlFlag) && formatFlag != "" {
+		return nil, fmt.Errorf("--json/--yaml and --format are mutually exclusive")
 	}
 	if jsonFlag {
 		formatFlag = "json"
 	}
+	if yamlFlag {
+		formatFlag = "yaml"
+	}
 	columnsFlag, _ := cmd.Flags().GetString("columns")
 	fieldsFlag, _ := cmd.Flags().GetString("fields")
-	if fieldsFlag != "" && jsonFlag {
-		return nil, fmt.Errorf("--fields and --json are mutually exclusive")
+	if fieldsFlag != "" && (jsonFlag || yamlFlag) {
+		return nil, fmt.Errorf("--fields and --json/--yaml are mutually exclusive")
 	}
 	if fieldsFlag != "" && formatFlag != "" {
 		return nil, fmt.Errorf("--fields and --format are mutually exclusive")

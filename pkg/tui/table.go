@@ -49,10 +49,10 @@ func NewTable(columns []Column, height, width int) TableModel {
 		columns:     columns,
 		height:      height,
 		width:       width,
-		headerStyle: lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("99")),
-		cursorStyle: lipgloss.NewStyle().Foreground(lipgloss.Color("86")).Bold(true),
+		headerStyle: lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(CLIAccent)),
+		cursorStyle: lipgloss.NewStyle().Foreground(lipgloss.Color(CLIAccent)).Bold(true),
 		cellStyle:   lipgloss.NewStyle(),
-		gutterStyle: lipgloss.NewStyle().Foreground(lipgloss.Color("86")).Bold(true),
+		gutterStyle: lipgloss.NewStyle().Foreground(lipgloss.Color(CLIAccent)).Bold(true),
 	}
 }
 

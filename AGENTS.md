@@ -36,7 +36,7 @@ modules/har/          # External HAR module (separate go.mod)
 ## How specs work
 
 Each `*.spec.yaml` declares:
-1. **`nouns`** — entity types with their `fields` (id, expr, label, width_max, align).
+1. **`nouns`** — entity types with their `fields` (id, expr, label, field_type, mutable_path, width_max, align).
 2. **`commands`** — `verb noun[:variant]` pairs wired to `handler_type: endpoint`.
 
 ### Noun variant → Cobra subcommand name
@@ -55,6 +55,27 @@ noun_variant: type      # → cobra command "kg:type"
 | `columns: [...]` | Which fields show in `list` output |
 | `fields_subset: [...]` | Which fields show in `get` output (on endpoint, not noun) |
 | All noun fields | Available to `get` unless `fields_subset` limits them |
+
+### Mutable fields and update commands
+
+Fields with `mutable_path` are writable via `--set`/`--del` on update commands. `mutable_path` is a dot-path **relative to the `update_body_pick` subtree** — never starts with `it.`:
+
+```yaml
+# noun field
+- id: name
+  expr: it.project.name      # display expression
+  mutable_path: name         # relative path within the picked subtree
+
+# update command endpoint
+update_strategy: get-then-put
+update_body_pick: it.data.project   # evaluated against root GET response
+update_body_wrap: project           # re-wraps the mutated object in PUT body
+```
+
+Rules:
+- `update_body_pick` should match `yaml_pick_expr` on the corresponding `get` command — they describe the same subtree.
+- Fields without `mutable_path` are read-only and do not appear in `--list-fields`.
+- `mutable_path` must not start with `it.` — the spec validator will reject it.
 
 ### Path templating
 

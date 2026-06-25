@@ -26,7 +26,7 @@ import (
 )
 
 const (
-	mcpBaseURL         = "https://mcp.harness.io"
+	mcpBaseURL         = "https://mcp.harness.io/cli"
 	ssoCallbackPath    = "/oauth/callback"
 	ssoPort            = 57380
 	ssoCallbackTimeout = 5 * time.Minute
@@ -41,6 +41,7 @@ const (
 func LoginSSOHandler(ctx *cmdctx.Ctx) error {
 	overwrite := cmdctx.GetBool(ctx.FlagValues, "overwrite")
 	noOverwrite := cmdctx.GetBool(ctx.FlagValues, "no-overwrite")
+	forceSave := cmdctx.GetBool(ctx.FlagValues, "force-save")
 	if overwrite && noOverwrite {
 		return fmt.Errorf("--overwrite and --no-overwrite are mutually exclusive")
 	}
@@ -95,17 +96,21 @@ func LoginSSOHandler(ctx *cmdctx.Ctx) error {
 			AuthType:  auth.AuthTypeSSO,
 		})
 		if werr != nil {
-			return werr
-		}
-		if result == nil {
+			if !forceSave {
+				return werr
+			}
+			fmt.Fprintf(os.Stderr, "WARNING: org/project picker failed (%v) — saving profile anyway (--force-save)\n\n", werr)
+		} else if result == nil {
 			return fmt.Errorf("canceled by user — config not written")
+		} else {
+			orgID = result.OrgID
+			projectID = result.Project
 		}
-		orgID = result.OrgID
-		projectID = result.Project
 	}
 
 	cfg.Profiles[profileName] = &config.Profile{
 		APIUrl:    apiURL,
+		UIUrl:     resolveUIURL(subdomain),
 		AccountID: accountID,
 		OrgID:     orgID,
 		ProjectID: projectID,
@@ -128,6 +133,16 @@ func LoginSSOHandler(ctx *cmdctx.Ctx) error {
 // subdomain in the JWT; the gateway handles cluster routing internally.
 func resolveAPIURL(token, accountID, subdomain string) (string, error) {
 	return mcpBaseURL, nil
+}
+
+// resolveUIURL returns the Harness UI base URL for a user's account.
+// Uses the subdomain from JWT claims (e.g. "prod2.harness.io" → "https://prod2.harness.io").
+// Falls back to "https://app.harness.io" when the subdomain is empty.
+func resolveUIURL(subdomain string) string {
+	if subdomain != "" {
+		return "https://" + subdomain
+	}
+	return "https://app.harness.io"
 }
 
 // --- PKCE flow ---

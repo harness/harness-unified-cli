@@ -103,7 +103,7 @@ func resolveToken(token string, byID map[string]spec.FieldDef) (spec.TableColumn
 		if !ok {
 			return spec.TableColumn{}, fmt.Errorf("unknown field ID %q; run with --list-columns to see available fields", token)
 		}
-		return spec.TableColumn{Header: fieldLabel(f), Expr: f.DisplayExpr(), Align: f.Align, FieldType: f.FieldType, WidthMax: f.WidthMax}, nil
+		return spec.TableColumn{Header: fieldLabel(f), Expr: f.Expr, Align: f.Align, FieldType: f.FieldType, WidthMax: f.WidthMax}, nil
 	}
 	// Ad-hoc: id:expr
 	id := token[:idx]

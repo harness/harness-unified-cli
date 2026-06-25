@@ -98,6 +98,17 @@ func LoginHandler(ctx *cmdctx.Ctx) error {
 		if projectID == "" {
 			projectID = result.Project
 		}
+		if result.ScopeNotSet {
+			profileArg := ""
+			if profileName != "default" {
+				profileArg = " --profile " + profileName
+			}
+			if result.ScopeSkipped {
+				fmt.Fprintf(os.Stderr, "\nNote: Org and project not set — run 'harness auth setscope%s' to configure\n", profileArg)
+			} else {
+				fmt.Fprintf(os.Stderr, "\nNote: Token does not have permission to list organizations or projects — run 'harness auth setscope%s' to manually configure org and project\n", profileArg)
+			}
+		}
 	} else {
 		// Non-interactive: all values from flags/env.
 		if _, exists := cfg.Profiles[profileName]; exists {
@@ -117,8 +128,11 @@ func LoginHandler(ctx *cmdctx.Ctx) error {
 			// pty but all flags provided — validate URL only
 			if apiURL == "" {
 				apiURL = defaultAPIURL
-			} else if err := auth.ValidateAPIURL(apiURL); err != nil {
-				return err
+			} else {
+				apiURL = auth.NormalizeAPIURL(apiURL)
+				if err := auth.ValidateAPIURL(apiURL); err != nil {
+					return err
+				}
 			}
 		} else {
 			if token == "" {
@@ -126,8 +140,11 @@ func LoginHandler(ctx *cmdctx.Ctx) error {
 			}
 			if apiURL == "" {
 				apiURL = defaultAPIURL
-			} else if err := auth.ValidateAPIURL(apiURL); err != nil {
-				return err
+			} else {
+				apiURL = auth.NormalizeAPIURL(apiURL)
+				if err := auth.ValidateAPIURL(apiURL); err != nil {
+					return err
+				}
 			}
 		}
 

@@ -30,6 +30,7 @@ type ResolvedAuth struct {
 	Source      string   // "profile:<name>" or SourceEnv
 	AuthType    AuthType // AuthTypePAT or AuthTypeSSO
 	APIUrl      string
+	UIUrl       string   // Harness UI base URL; only set for SSO profiles (from JWT subdomain)
 	AccountID   string
 	OrgID       string
 	ProjectID   string
@@ -167,6 +168,7 @@ func resolveProfile(name string) (*ResolvedAuth, error) {
 		Source:      "profile:" + name,
 		AuthType:    authType,
 		APIUrl:      apiURL,
+		UIUrl:       p.UIUrl,
 		AccountID:   p.AccountID,
 		OrgID:       p.OrgID,
 		ProjectID:   p.ProjectID,
@@ -183,7 +185,7 @@ func resolveProfile(name string) (*ResolvedAuth, error) {
 
 var (
 	hostLabelRE   = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?$`)
-	harnessHostRE = regexp.MustCompile(`^https://([A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?\.)+harness\.io$`)
+	harnessHostRE = regexp.MustCompile(`^https://([A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?\.)+harness\.io(/[a-z0-9_-]+)*$`)
 	harnessNameRE = regexp.MustCompile(`^([A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?\.)+harness\.io$`)
 )
 
@@ -212,28 +214,92 @@ func ValidateAPIURL(apiURL string) error {
 	return nil
 }
 
+// TokenKind identifies the type of a Harness token.
+type TokenKind string
+
+const (
+	TokenKindPAT     TokenKind = "pat"
+	TokenKindSAT     TokenKind = "sat"
+	TokenKindJWT     TokenKind = "jwt"
+	TokenKindUnknown TokenKind = ""
+)
+
+// jwtSegment matches a single base64url-encoded JWT segment (header, payload, or signature).
+var jwtSegment = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
+
+// TokenType returns the kind of token (PAT, SAT, JWT, or unknown) by inspecting its structure.
+// JWT detection is structural only: exactly 3 non-empty base64url segments separated by dots.
+func TokenType(token string) TokenKind {
+	switch {
+	case strings.HasPrefix(token, "pat."):
+		return TokenKindPAT
+	case strings.HasPrefix(token, "sat."):
+		return TokenKindSAT
+	default:
+		parts := strings.Split(token, ".")
+		if len(parts) == 3 {
+			isJWT := true
+			for _, p := range parts {
+				if len(p) == 0 || !jwtSegment.MatchString(p) {
+					isJWT = false
+					break
+				}
+			}
+			if isJWT {
+				return TokenKindJWT
+			}
+		}
+		return TokenKindUnknown
+	}
+}
+
 var patSegment = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 
-// ValidatePATFormat returns an error if token does not match pat.<accountId>.<tokenId>.<secret>.
+// ValidatePATFormat returns an error if token does not match pat.<accountId>.<tokenId>.<secret>
+// or sat.<accountId>.<tokenId>.<secret>.
 func ValidatePATFormat(token string) error {
 	parts := strings.SplitN(token, ".", 4)
-	if len(parts) != 4 || parts[0] != "pat" {
-		return fmt.Errorf("invalid PAT format — expected pat.<accountId>.<tokenId>.<secret>")
+	if len(parts) != 4 || (parts[0] != "pat" && parts[0] != "sat") {
+		return fmt.Errorf("invalid PAT/SAT format — expected pat.<accountId>.<tokenId>.<secret> or sat.<accountId>.<tokenId>.<secret>")
 	}
 	for _, p := range parts[1:] {
 		if !patSegment.MatchString(p) {
-			return fmt.Errorf("invalid PAT format — segments must match [A-Za-z0-9_-]+")
+			return fmt.Errorf("invalid PAT/SAT format — segments must match [A-Za-z0-9_-]+")
 		}
 	}
 	return nil
 }
 
-// AccountIDFromToken extracts the account ID from a valid PAT of the form pat.{AccountID}.x.y.
-// Callers must validate the token with ValidatePATFormat before calling this.
+// AccountIDFromToken extracts the account ID from a valid PAT/SAT of the form pat.{AccountID}.x.y
+// or sat.{AccountID}.x.y. Callers must validate the token with ValidatePATFormat before calling this.
 func AccountIDFromToken(token string) string {
+	if TokenType(token) == TokenKindUnknown {
+		return ""
+	}
 	parts := strings.SplitN(token, ".", 4)
-	if len(parts) == 4 && parts[0] == "pat" {
+	if len(parts) == 4 {
 		return parts[1]
 	}
 	return ""
+}
+
+// MaskedToken returns a display-safe representation of a token.
+// For PAT/SAT tokens it reveals <prefix>.<accountID> and masks the remaining segments.
+// For anything else it falls back to Masked.
+func MaskedToken(s string) string {
+	kind := TokenType(s)
+	if kind != TokenKindPAT && kind != TokenKindSAT {
+		return Masked(s)
+	}
+	parts := strings.SplitN(s, ".", 4)
+	if len(parts) == 4 {
+		return parts[0] + "." + parts[1] + "." + strings.Repeat("•", len(parts[2])) + "." + strings.Repeat("•", len(parts[3]))
+	}
+	return Masked(s)
+}
+
+// Masked returns a display-safe representation of an arbitrary secret string
+// by replacing every character with a bullet.
+func Masked(s string) string {
+	return strings.Repeat("•", len(s))
 }

@@ -24,6 +24,7 @@ const (
 
 type Profile struct {
 	APIUrl      string   `yaml:"api_url"`
+	UIUrl       string   `yaml:"ui_url,omitempty"` // Harness UI base URL; set for SSO profiles from JWT subdomain
 	AccountID   string   `yaml:"account_id"`
 	OrgID       string   `yaml:"org_id,omitempty"`
 	ProjectID   string   `yaml:"project_id,omitempty"`

@@ -17,6 +17,7 @@ import (
 	"github.com/harness/harness-cli/pkg/auth"
 	"github.com/harness/harness-cli/pkg/format"
 	"github.com/harness/harness-cli/pkg/logstream"
+	"github.com/harness/harness-cli/pkg/tui"
 )
 
 const lvPollIntervalSecs = 2
@@ -62,14 +63,14 @@ type lvStyles struct {
 
 func newLVStyles() lvStyles {
 	return lvStyles{
-		header:     lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("99")).Padding(0, 1),
-		selected:   lipgloss.NewStyle().Background(lipgloss.Color("236")).Foreground(lipgloss.Color("86")).Bold(true),
-		normal:     lipgloss.NewStyle().Foreground(lipgloss.Color("252")),
-		dim:        lipgloss.NewStyle().Foreground(lipgloss.Color("240")),
-		border:     lipgloss.NewStyle().Border(lipgloss.NormalBorder(), false, true, false, false).BorderForeground(lipgloss.Color("238")),
-		errStyle:   lipgloss.NewStyle().Foreground(lipgloss.Color("196")),
-		scrollHint: lipgloss.NewStyle().Foreground(lipgloss.Color("240")),
-		divider:    lipgloss.NewStyle().Foreground(lipgloss.Color("238")),
+		header:     lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(tui.CLIAccent)).Padding(0, 1),
+		selected:   lipgloss.NewStyle().Background(lipgloss.Color(tui.CLIBgElevated)).Foreground(lipgloss.Color(tui.CLIAccent)).Bold(true),
+		normal:     lipgloss.NewStyle().Foreground(lipgloss.Color(tui.CLIText)),
+		dim:        lipgloss.NewStyle().Foreground(lipgloss.Color(tui.CLITextMuted)),
+		border:     lipgloss.NewStyle().Border(lipgloss.NormalBorder(), false, true, false, false).BorderForeground(lipgloss.Color(tui.CLIBorder)),
+		errStyle:   lipgloss.NewStyle().Foreground(lipgloss.Color(tui.CLIError)),
+		scrollHint: lipgloss.NewStyle().Foreground(lipgloss.Color(tui.CLITextMuted)),
+		divider:    lipgloss.NewStyle().Foreground(lipgloss.Color(tui.CLIBorder)),
 	}
 }
 

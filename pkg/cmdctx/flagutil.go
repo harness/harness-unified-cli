@@ -4,10 +4,15 @@
 package cmdctx
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
+
+	"go.yaml.in/yaml/v3"
 )
 
 // GetString returns FlagValues[key] as a string, converting bool/int/float64 if needed.
@@ -87,6 +92,65 @@ func GetFloat64(fv map[string]any, key string) float64 {
 func Exists(fv map[string]any, key string) bool {
 	_, ok := fv[key]
 	return ok
+}
+
+// NormalizeFileBody validates and normalizes a file body string based on the effective content type.
+//
+// For application/yaml endpoints: the body must NOT be JSON (first non-whitespace char is '{').
+// For application/json endpoints (ct == "" or "application/json"): JSON is passed through after
+// validation; YAML is parsed and re-encoded as JSON.
+//
+// Returns the normalized body string and the resolved content type, or an error.
+func NormalizeFileBody(body string, ct string, filePath string) (string, string, error) {
+	switch ct {
+	case "", "application/json":
+		ct = "application/json"
+	case "application/yaml":
+		// ok
+	default:
+		return "", "", fmt.Errorf("unsupported content type for file body: %q", ct)
+	}
+
+	ext := strings.ToLower(filepath.Ext(filePath))
+	var isJSON bool
+	switch ext {
+	case ".json":
+		isJSON = true
+	case ".yaml", ".yml":
+		isJSON = false
+	default:
+		isJSON = strings.HasPrefix(strings.TrimSpace(body), "{")
+	}
+
+	if ct == "application/yaml" {
+		if isJSON {
+			return "", "", fmt.Errorf("this command requires a YAML body, but JSON was provided")
+		}
+		var v any
+		if err := yaml.Unmarshal([]byte(body), &v); err != nil {
+			return "", "", fmt.Errorf("parsing YAML body: %w", err)
+		}
+		return body, ct, nil
+	}
+
+	// JSON endpoint
+	if isJSON {
+		if err := json.Unmarshal([]byte(body), new(any)); err != nil {
+			return "", "", fmt.Errorf("parsing JSON body: %w", err)
+		}
+		return body, ct, nil
+	}
+
+	// YAML input — parse and convert to JSON
+	var v any
+	if err := yaml.Unmarshal([]byte(body), &v); err != nil {
+		return "", "", fmt.Errorf("parsing YAML body: %w", err)
+	}
+	out, err := json.Marshal(v)
+	if err != nil {
+		return "", "", fmt.Errorf("converting YAML to JSON: %w", err)
+	}
+	return string(out), ct, nil
 }
 
 // SlurpInputFile reads the file path stored at FlagValues["file"].

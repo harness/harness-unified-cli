@@ -26,11 +26,16 @@ func EnvHandler(ctx *cmdctx.Ctx) error {
 		prefix = "export "
 	}
 
-	vars := []struct{ k, v string }{
-		{hbase.EnvAPIKey, resolved.PATToken},
-		{hbase.EnvAccount, resolved.AccountID},
-		{hbase.EnvAPIURL, resolved.APIUrl},
+	var vars []struct{ k, v string }
+	if resolved.AuthType == auth.AuthTypeSSO {
+		vars = append(vars, struct{ k, v string }{hbase.EnvAPIJWT, resolved.SSOToken})
+	} else {
+		vars = append(vars, struct{ k, v string }{hbase.EnvAPIKey, resolved.PATToken})
 	}
+	vars = append(vars,
+		struct{ k, v string }{hbase.EnvAccount, resolved.AccountID},
+		struct{ k, v string }{hbase.EnvAPIURL, resolved.APIUrl},
+	)
 	if resolved.OrgID != "" {
 		vars = append(vars, struct{ k, v string }{hbase.EnvOrg, resolved.OrgID})
 	}

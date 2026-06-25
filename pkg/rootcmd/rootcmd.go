@@ -139,6 +139,9 @@ func dumpModuleHelp(moduleName string, reg *registry.Registry) error {
 
 // SetupAndExecuteRootCmd wires common flags, attaches commands, and executes root.
 func SetupAndExecuteRootCmd(root *cobra.Command, reg *registry.Registry) {
+	if path := os.Getenv(hbase.EnvLogFile); path != "" {
+		hlog.SetLogFile(path)
+	}
 	if reg.IsMainBinary {
 		release.NagIfDue(hbase.Version)
 		release.MaybeSpawn()

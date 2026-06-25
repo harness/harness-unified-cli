@@ -18,17 +18,25 @@ import (
 	pkgauth "github.com/harness/harness-cli/pkg/auth"
 	hclient "github.com/harness/harness-cli/pkg/client"
 	"github.com/harness/harness-cli/pkg/cmdctx"
+	"github.com/harness/harness-cli/pkg/hlog"
+	"github.com/harness/harness-cli/pkg/tui"
 )
 
 // WizardResult is returned by RunLoginWizard on success.
 type WizardResult struct {
-	APIURL  string
-	Token   string
-	Account string
-	RegURL  string
-	OrgID   string
-	Project string
+	APIURL      string
+	Token       string
+	Account     string
+	RegURL      string
+	OrgID       string
+	Project     string
+	ScopeNotSet    bool // true when org/project not configured — caller should prompt setscope
+	ScopeSkipped   bool // true when user explicitly chose to save without selecting org/project
 }
+
+// errNoEnumPerms is set as cancelReason when a token can't list orgs/projects.
+// RunLoginWizard treats this as a partial success rather than a user cancel.
+var errNoEnumPerms = fmt.Errorf("token lacks permission to list organizations — run 'harness auth setscope' to configure org and project")
 
 // WizardExisting carries values from an already-saved profile so the wizard
 // can offer "use existing" options instead of requiring re-entry.
@@ -66,12 +74,12 @@ type wizardStyles struct {
 
 func newWizardStyles() wizardStyles {
 	return wizardStyles{
-		title:    lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("99")),
-		subtle:   lipgloss.NewStyle().Foreground(lipgloss.Color("240")),
-		errStyle: lipgloss.NewStyle().Foreground(lipgloss.Color("196")),
-		selected: lipgloss.NewStyle().Foreground(lipgloss.Color("86")).Bold(true),
-		prompt:   lipgloss.NewStyle().Foreground(lipgloss.Color("99")),
-		box:      lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("238")).Padding(0, 1),
+		title:    lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(tui.CLIAccent)),
+		subtle:   lipgloss.NewStyle().Foreground(lipgloss.Color(tui.CLITextMuted)),
+		errStyle: lipgloss.NewStyle().Foreground(lipgloss.Color(tui.CLIError)),
+		selected: lipgloss.NewStyle().Foreground(lipgloss.Color(tui.CLIAccent)).Bold(true),
+		prompt:   lipgloss.NewStyle().Foreground(lipgloss.Color(tui.CLIAccent)),
+		box:      lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color(tui.CLIBorder)).Padding(0, 1),
 	}
 }
 
@@ -142,6 +150,7 @@ type wizardModel struct {
 	err          string
 	canceled     bool
 	cancelReason error // set when canceled due to an internal error, not user action
+	scopeSkipped bool  // user chose to save without selecting org/project
 	width        int
 	height       int
 }
@@ -168,7 +177,7 @@ func newWizardModel(existing *WizardExisting) wizardModel {
 	url.SetWidth(50)
 
 	tok := textinput.New()
-	tok.Placeholder = "pat.xxxxxxxx.xxxxxxxx.xxxxxxxx"
+	tok.Placeholder = "pat.xxxxxxxx.xxxxxxxx.xxxxxxxx or sat.xxxxxxxx.xxxxxxxx.xxxxxxxx"
 	tok.EchoMode = textinput.EchoPassword
 	tok.EchoCharacter = '•'
 	tok.SetWidth(60)
@@ -184,7 +193,7 @@ func newWizardModel(existing *WizardExisting) wizardModel {
 		delegate.ShowDescription = false
 		delegate.SetHeight(1)
 		delegate.SetSpacing(0)
-		delegate.Styles.SelectedTitle = delegate.Styles.SelectedTitle.Foreground(lipgloss.Color("86")).BorderLeftForeground(lipgloss.Color("86"))
+		delegate.Styles.SelectedTitle = delegate.Styles.SelectedTitle.Foreground(lipgloss.Color(tui.CLIAccent)).BorderLeftForeground(lipgloss.Color(tui.CLIAccent))
 		l := list.New(nil, delegate, 60, 20)
 		l.Title = title
 		l.Styles.Title = st.title
@@ -229,12 +238,7 @@ func newWizardModel(existing *WizardExisting) wizardModel {
 	}
 }
 
-func (m wizardModel) Init() tea.Cmd {
-	if m.setMode {
-		return tea.Batch(func() tea.Msg { return m.spin.Tick() }, m.fetchOrgs())
-	}
-	return nil
-}
+func (m wizardModel) Init() tea.Cmd { return nil }
 
 func (m wizardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -326,6 +330,20 @@ func (m wizardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Quit
 			}
 
+		case "s":
+			if !m.setMode {
+				switch m.step {
+				case stepOrgPick:
+					m.scopeSkipped = true
+					m.step = stepDone
+					return m, tea.Quit
+				case stepProjectPick:
+					m.scopeSkipped = true
+					m.step = stepDone
+					return m, tea.Quit
+				}
+			}
+
 		case "enter":
 			return m.handleEnter()
 		}
@@ -353,11 +371,25 @@ func (m wizardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.cancelReason = msg.err
 				return m, tea.Quit
 			}
+			// SAT/PAT tokens may lack org-list permissions — treat as partial success.
+			tokenKind := pkgauth.TokenType(m.token)
+			if (tokenKind == pkgauth.TokenKindSAT || tokenKind == pkgauth.TokenKindPAT) && strings.Contains(msg.err.Error(), "403") {
+				m.canceled = true
+				m.cancelReason = errNoEnumPerms
+				return m, tea.Quit
+			}
 			m.step = stepToken
 			m.tokenInCustom = true
 			m.tokenInput.Focus()
 			m.err = msg.err.Error()
 			return m, textinput.Blink
+		}
+		// SAT/PAT token with no visible orgs — same treatment as 403.
+		tokenKind := pkgauth.TokenType(m.token)
+		if len(msg.orgs) == 0 && (tokenKind == pkgauth.TokenKindSAT || tokenKind == pkgauth.TokenKindPAT) {
+			m.canceled = true
+			m.cancelReason = errNoEnumPerms
+			return m, tea.Quit
 		}
 		items := make([]list.Item, len(msg.orgs))
 		for i, o := range msg.orgs {
@@ -377,6 +409,13 @@ func (m wizardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case projectsDoneMsg:
 		if msg.err != nil {
+			// SAT/PAT tokens may lack project-list permissions — treat as partial success.
+			tokenKind := pkgauth.TokenType(m.token)
+			if (tokenKind == pkgauth.TokenKindSAT || tokenKind == pkgauth.TokenKindPAT) && strings.Contains(msg.err.Error(), "403") {
+				m.canceled = true
+				m.cancelReason = errNoEnumPerms
+				return m, tea.Quit
+			}
 			m.step = stepOrgPick
 			m.err = msg.err.Error()
 			return m, nil
@@ -563,10 +602,10 @@ func (m wizardModel) View() tea.View {
 
 	case stepToken:
 		b.WriteString(st.selected.Render("✓ ") + st.subtle.Render("API URL: "+m.apiURL) + "\n\n")
-		b.WriteString(st.prompt.Render("Harness PAT") + "\n")
+		b.WriteString(st.prompt.Render("Harness PAT/SAT") + "\n")
 		if m.tokenHasExisting && !m.tokenInCustom {
 			tokenLabels := []string{
-				"Use existing  (" + maskedToken(m.existingToken) + ")",
+				"Use existing  (" + pkgauth.MaskedToken(m.existingToken) + ")",
 				"Enter new token...",
 			}
 			renderPicker(&b, st, tokenLabels, m.tokenPickIdx)
@@ -578,13 +617,13 @@ func (m wizardModel) View() tea.View {
 
 	case stepValidating:
 		b.WriteString(st.selected.Render("✓ ") + st.subtle.Render("API URL: "+m.apiURL) + "\n")
-		b.WriteString(st.selected.Render("✓ ") + st.subtle.Render("Token: "+masked(m.token)) + "\n\n")
+		b.WriteString(st.selected.Render("✓ ") + st.subtle.Render("Token: "+pkgauth.Masked(m.token)) + "\n\n")
 		b.WriteString(m.spin.View() + " Validating credentials…\n")
 
 	case stepOrgLoad, stepOrgPick, stepProjectLoad:
 		if !m.setMode {
 			b.WriteString(st.selected.Render("✓ ") + st.subtle.Render("API URL: "+m.apiURL) + "\n")
-			b.WriteString(st.selected.Render("✓ ") + st.subtle.Render("Token: "+masked(m.token)) + "\n\n")
+			b.WriteString(st.selected.Render("✓ ") + st.subtle.Render("Token: "+pkgauth.Masked(m.token)) + "\n\n")
 		}
 		if m.step == stepOrgLoad {
 			b.WriteString(m.spin.View() + " Loading organizations…\n")
@@ -597,17 +636,21 @@ func (m wizardModel) View() tea.View {
 			if m.setMode {
 				escHint = "esc to cancel"
 			}
-			b.WriteString(st.subtle.Render("  / to filter · enter to select · "+escHint) + "\n")
+			saveHint := " · s to save without org/project"
+			if m.setMode {
+				saveHint = ""
+			}
+			b.WriteString(st.subtle.Render("  / to filter · enter to select · "+escHint+saveHint) + "\n")
 		}
 
 	case stepProjectPick:
 		if !m.setMode {
 			b.WriteString(st.selected.Render("✓ ") + st.subtle.Render("API URL: "+m.apiURL) + "\n")
-			b.WriteString(st.selected.Render("✓ ") + st.subtle.Render("Token: "+masked(m.token)) + "\n")
+			b.WriteString(st.selected.Render("✓ ") + st.subtle.Render("Token: "+pkgauth.Masked(m.token)) + "\n")
 		}
 		b.WriteString(st.selected.Render("✓ ") + st.subtle.Render("Org: "+m.orgID) + "\n\n")
 		b.WriteString(st.box.Render(m.projList.View()) + "\n")
-		b.WriteString(st.subtle.Render("  / to filter · enter to select · esc to change org") + "\n")
+		b.WriteString(st.subtle.Render("  / to filter · enter to select · esc to change org · s to save without project") + "\n")
 	}
 
 	if m.err != "" {
@@ -745,9 +788,9 @@ func deepGet(m map[string]any, path string) string {
 }
 
 func validateAndFetch(apiURL, token string) (accountID, regURL string, err error) {
-	accountID = accountIDFromToken(token)
+	accountID = pkgauth.AccountIDFromToken(token)
 	if accountID == "" {
-		return "", "", fmt.Errorf("token does not look like a Harness PAT (expected pat.<accountID>.<...>)")
+		return "", "", fmt.Errorf("token does not look like a Harness PAT/SAT (expected pat.<accountID>.<...> or sat.<accountID>.<...>)")
 	}
 	c := hclient.NewWithAuth(context.Background(), &pkgauth.ResolvedAuth{
 		APIUrl:    apiURL,
@@ -755,21 +798,18 @@ func validateAndFetch(apiURL, token string) (accountID, regURL string, err error
 		PATToken:  token,
 		AccountID: accountID,
 	})
-	if _, _, err := c.Get(fmt.Sprintf("/ng/api/accounts/%s", accountID), map[string]string{"accountIdentifier": accountID}); err != nil {
-		return "", "", err
+	if pkgauth.TokenType(token) == pkgauth.TokenKindSAT {
+		if _, _, err := c.PostRaw("/ng/api/token/validate", map[string]string{"accountIdentifier": accountID}, token, "text/plain"); err != nil {
+			return "", "", err
+		}
+	} else {
+		if _, _, err := c.Get(fmt.Sprintf("/ng/api/accounts/%s", accountID), map[string]string{"accountIdentifier": accountID}); err != nil {
+			return "", "", err
+		}
 	}
 	regURL, _ = fetchRegistryURL(apiURL, token, accountID)
 	return accountID, regURL, nil
 }
-
-func accountIDFromToken(token string) string {
-	parts := strings.SplitN(token, ".", 4)
-	if len(parts) == 4 && parts[0] == "pat" {
-		return parts[1]
-	}
-	return ""
-}
-
 
 // --- RunLoginWizard / RunSetWizard ---
 
@@ -779,14 +819,39 @@ func accountIDFromToken(token string) string {
 func RunLoginWizard(ctx *cmdctx.Ctx, existing *WizardExisting) (*WizardResult, error) {
 	m := newWizardModel(existing)
 	m.cmdCtx = ctx
+	prev := hlog.SilenceForTUI()
+	defer hlog.RestoreAfterTUI(prev)
 	p := tea.NewProgram(m)
 	final, err := p.Run()
 	if err != nil {
 		return nil, err
 	}
 	fm := final.(wizardModel)
-	if fm.canceled || fm.step != stepDone {
+	if fm.canceled {
+		if fm.cancelReason == errNoEnumPerms {
+			return &WizardResult{
+				APIURL:      fm.apiURL,
+				Token:       fm.token,
+				Account:     fm.accountID,
+				RegURL:      fm.regURL,
+				ScopeNotSet: true,
+			}, nil
+		}
 		return nil, nil
+	}
+	if fm.step != stepDone {
+		return nil, nil
+	}
+	if fm.scopeSkipped {
+		return &WizardResult{
+			APIURL:       fm.apiURL,
+			Token:        fm.token,
+			Account:      fm.accountID,
+			RegURL:       fm.regURL,
+			OrgID:        fm.orgID,
+			ScopeNotSet:  true,
+			ScopeSkipped: true,
+		}, nil
 	}
 	return &WizardResult{
 		APIURL:  fm.apiURL,
@@ -827,7 +892,7 @@ func RunSetWizard(ctx *cmdctx.Ctx, in *SetWizardInput) (*WizardResult, error) {
 		delegate.ShowDescription = false
 		delegate.SetHeight(1)
 		delegate.SetSpacing(0)
-		delegate.Styles.SelectedTitle = delegate.Styles.SelectedTitle.Foreground(lipgloss.Color("86")).BorderLeftForeground(lipgloss.Color("86"))
+		delegate.Styles.SelectedTitle = delegate.Styles.SelectedTitle.Foreground(lipgloss.Color(tui.CLIAccent)).BorderLeftForeground(lipgloss.Color(tui.CLIAccent))
 		l := list.New(nil, delegate, 60, 20)
 		l.Title = title
 		l.Styles.Title = st.title
@@ -868,6 +933,8 @@ func RunSetWizard(ctx *cmdctx.Ctx, in *SetWizardInput) (*WizardResult, error) {
 		height:           24,
 	}
 
+	prev := hlog.SilenceForTUI()
+	defer hlog.RestoreAfterTUI(prev)
 	p := tea.NewProgram(m)
 	final, err := p.Run()
 	if err != nil {
@@ -889,22 +956,6 @@ func RunSetWizard(ctx *cmdctx.Ctx, in *SetWizardInput) (*WizardResult, error) {
 
 // --- helpers ---
 
-func masked(s string) string {
-	if len(s) <= 8 {
-		return strings.Repeat("•", len(s))
-	}
-	return s[:4] + strings.Repeat("•", len(s)-8) + s[len(s)-4:]
-}
-
-// maskedToken shows pat.<accountID> in the clear and masks the remaining segments.
-// Falls back to masked() for non-PAT tokens.
-func maskedToken(s string) string {
-	parts := strings.SplitN(s, ".", 4)
-	if len(parts) == 4 && parts[0] == "pat" {
-		return "pat." + parts[1] + "." + strings.Repeat("•", len(parts[2])) + "." + strings.Repeat("•", len(parts[3]))
-	}
-	return masked(s)
-}
 
 func truncate(s string, n int) string {
 	if len(s) <= n {

@@ -177,7 +177,7 @@ func FormatFieldsOutput(flags cmdctx.FormatFlags, data any, itemExpr string, fie
 			vals = append(vals, "")
 			continue
 		}
-		v := evalColumnExpr(env, f.DisplayExpr())
+		v := evalColumnExpr(env, f.Expr)
 		if v == nil {
 			vals = append(vals, "")
 		} else {
@@ -306,14 +306,14 @@ func BuildTextFieldFormatter(fields []spec.FieldDef, header, footer string, inte
 			var yamlBlocks []string
 			for _, f := range fields {
 				if f.FieldType == "multiline_text" || f.FieldType == "yaml" {
-					yamlBlocks = append(yamlBlocks, d.GetString(f.DisplayExpr()))
+					yamlBlocks = append(yamlBlocks, d.GetString(f.Expr))
 					continue
 				}
 				label := f.Label
 				if label == "" {
 					label = fieldLabelFromID(f.ID)
 				}
-				val := d.GetString(f.DisplayExpr())
+				val := d.GetString(f.Expr)
 				items = append(items, LabeledValue{Label: label, Value: val})
 			}
 			WriteLabeledValues(w, items)

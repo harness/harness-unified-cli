@@ -85,6 +85,19 @@ commands:
     verb: auth
     noun: login
     short: Save credentials to a profile
+    long: |
+      Save Harness credentials to a named profile.
+
+      Interactive mode (default when a terminal is detected and either --api-url or --api-token is not provided):
+        Launches a TUI wizard to enter the API URL, PAT/SAT token, and select an org and project.
+
+      Non-interactive mode (CI / scripting):
+        Provide both --api-url and --api-token to skip the wizard entirely.
+        If --org or --project are omitted the profile is saved without them; run 'harness auth setscope'
+        afterwards to configure the default scope.
+
+      The --api-url flag accepts a harness.io hostname ("app.harness.io") or a full URL
+      ("https://app.harness.io"). Both forms are expanded to a full URL automatically.
     no_auth: true
     handler_type: workflow
     workflow_id: login
@@ -126,6 +139,10 @@ commands:
       - name: no-overwrite
         is_bool: true
         description: Error if profile already exists
+      - name: force-save
+        is_bool: true
+        hidden: true
+        description: Save credentials and profile even if post-login steps (org/project picker) fail
 
   - command: auth setscope
     verb: auth
@@ -174,7 +191,11 @@ commands:
     no_auth: true
     handler_type: workflow
     workflow_id: status
-    flags: []
+    flags:
+      - name: token-status
+        is_bool: true
+        hidden: true
+        description: Show SSO token and refresh token expiration times
 
   - command: auth env
     verb: auth
@@ -196,6 +217,27 @@ commands:
     handler_type: workflow
     workflow_id: token
     flags: []
+
+  - command: auth sso_refresh
+    verb: auth
+    noun: sso_refresh
+    short: Refresh the SSO access token using the saved refresh token
+    no_auth: true
+    handler_type: workflow
+    workflow_id: sso_refresh
+    flags: []
+
+  - command: auth sso_status
+    verb: auth
+    noun: sso_status
+    short: Show SSO token expiry and decoded JWT claims
+    hidden: true
+    no_auth: true
+    handler_type: workflow
+    workflow_id: sso_status
+    flags:
+      - name: profile
+        description: Profile to inspect (default "default")
 
   - command: version
     verb: version

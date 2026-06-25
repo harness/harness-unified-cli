@@ -34,6 +34,7 @@ Scope flags (all commands):
 
 Common output flags:
   --json                           shorthand for --format json
+  --yaml                           shorthand for --format yaml
 
 Output flags (list):
   --format table|json|jsonl|csv|tsv|markdown    output format (default: table)

@@ -473,7 +473,7 @@ type auditScanResult struct {
 func executeRegistryFirewallScanHandler(cmdCtx *cmdctx.Ctx) error {
 	a := cmdCtx.Auth
 	registryID := cmdCtx.Id
-	filePath := cmdctx.GetString(cmdCtx.FlagValues, "file")
+	filePath := cmdctx.GetString(cmdCtx.FlagValues, "lockfile")
 
 	ctx := context.Background()
 	hc := &http.Client{Timeout: 60 * time.Second}

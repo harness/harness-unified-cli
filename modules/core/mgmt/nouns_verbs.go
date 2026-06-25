@@ -251,7 +251,7 @@ func GetNounHandler(ctx *cmdctx.Ctx) error {
 				padding := strings.Repeat(" ", maxID-len(f.ID))
 				label := f.Label
 				hasLabel := label != "" && !strings.EqualFold(label, strings.ReplaceAll(f.ID, "_", " "))
-				editable := f.Path != ""
+				editable := f.MutablePath != ""
 				switch {
 				case hasLabel && editable:
 					fmt.Printf("  %s%s  -- %s (editable)\n", f.ID, padding, label)

@@ -20,7 +20,7 @@ const executeRegistryMigrateHandlerID = "execute_registry_migrate"
 
 func executeRegistryMigrateHandler(ctx *cmdctx.Ctx) error {
 	a := ctx.Auth
-	filePath := cmdctx.GetString(ctx.FlagValues, "file")
+	filePath := cmdctx.GetString(ctx.FlagValues, "config")
 	concurrencyStr := cmdctx.GetString(ctx.FlagValues, "concurrency")
 	overwrite := cmdctx.GetBool(ctx.FlagValues, "overwrite")
 	dryRun := cmdctx.GetBool(ctx.FlagValues, "dry-run")

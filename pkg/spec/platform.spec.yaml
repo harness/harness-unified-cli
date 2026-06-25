@@ -84,13 +84,15 @@ nouns:
       - id: identifier
         expr: it.identifier
       - id: name
-        path: it.name
+        expr: it.name
+        mutable_path: name
       - id: description
-        path: it.description
+        expr: it.description
+        mutable_path: description
       - id: tags
-        path: it.tags
-        format_expr: formatTagDisplay(it.tags)
+        expr: formatTagDisplay(it.tags)
         field_type: tags
+        mutable_path: tags
 
   - noun: project
     short_desc: A scoped workspace within an org where pipelines, connectors, and secrets live.
@@ -101,21 +103,24 @@ nouns:
       - id: identifier
         expr: it.project.identifier
       - id: name
-        path: it.project.name
+        expr: it.project.name
+        mutable_path: name
       - id: org
         expr: it.project.orgIdentifier
       - id: description
-        path: it.project.description
+        expr: it.project.description
+        mutable_path: description
       - id: color
-        path: it.project.color
+        expr: it.project.color
+        mutable_path: color
       - id: tags
-        path: it.project.tags
-        format_expr: formatTagDisplay(it.project.tags)
+        expr: formatTagDisplay(it.project.tags)
         field_type: tags
+        mutable_path: tags
       - id: modules
-        path: it.project.modules
-        format_expr: jsonArray(it.project.modules)
+        expr: jsonArray(it.project.modules)
         field_type: set
+        mutable_path: modules
       - id: created_at
         expr: epochMs(it.createdAt)
         field_type: ts
@@ -166,17 +171,19 @@ nouns:
       - id: identifier
         expr: it.identifier
       - id: name
-        path: it.name
+        expr: it.name
+        mutable_path: name
       - id: description
-        path: it.description
+        expr: it.description
+        mutable_path: description
       - id: tags
-        path: it.tags
-        format_expr: formatTagDisplay(it.tags)
+        expr: formatTagDisplay(it.tags)
         field_type: tags
+        mutable_path: tags
       - id: users
-        path: it.users
-        format_expr: jsonArray(it.users)
+        expr: jsonArray(it.users)
         field_type: set
+        mutable_path: users
       - id: org
         expr: it.orgIdentifier
       - id: project
@@ -202,9 +209,9 @@ nouns:
       - id: description
         expr: it.description
       - id: tags
-        path: it.tags
-        format_expr: formatTagDisplay(it.tags)
+        expr: formatTagDisplay(it.tags)
         field_type: tags
+        mutable_path: tags
       - id: org_id
         expr: it.orgIdentifier
       - id: project_id
@@ -218,17 +225,19 @@ nouns:
       - id: identifier
         expr: it.role.identifier
       - id: name
-        path: it.role.name
+        expr: it.role.name
+        mutable_path: name
       - id: description
-        path: it.role.description
+        expr: it.role.description
+        mutable_path: description
       - id: scopes
-        path: it.role.allowedScopeLevels
-        format_expr: jsonArray(it.role.allowedScopeLevels)
+        expr: jsonArray(it.role.allowedScopeLevels)
         field_type: set
+        mutable_path: allowedScopeLevels
       - id: permissions
-        path: it.role.permissions
-        format_expr: jsonArray(it.role.permissions)
+        expr: jsonArray(it.role.permissions)
         field_type: set
+        mutable_path: permissions
       - id: harness_managed
         expr: it.harnessManaged
       - id: created_at
@@ -351,11 +360,13 @@ nouns:
       - id: identifier
         expr: it.connector.identifier
       - id: name
-        path: it.connector.name
+        expr: it.connector.name
+        mutable_path: name
       - id: type
-        path: it.connector.type
+        expr: it.connector.type
       - id: description
-        path: it.connector.description
+        expr: it.connector.description
+        mutable_path: description
       - id: status
         expr: it.status.status
       - id: last_connected_at
@@ -430,13 +441,16 @@ nouns:
       - id: identifier
         expr: it.secret.identifier
       - id: name
-        path: it.secret.name
+        expr: it.secret.name
+        mutable_path: name
       - id: type
         expr: it.secret.type
       - id: secret_manager
-        path: it.secret.spec.secretManagerIdentifier
+        expr: it.secret.spec.secretManagerIdentifier
+        mutable_path: spec.secretManagerIdentifier
       - id: value
-        path: it.secret.spec.value
+        expr: it.secret.spec.value
+        mutable_path: spec.value
       - id: updated
         expr: epochMs(it.updatedAt)
       - id: created
@@ -497,7 +511,7 @@ commands:
       path: /ng/api/organizations/{{ctx.id}}
       item_expr: it.data.organization
       update_strategy: get-then-put
-      update_body_pick: it
+      update_body_pick: it.data.organization
       update_body_wrap: organization
       query_params:
         accountIdentifier: auth.account
@@ -512,6 +526,7 @@ commands:
     handler_type: endpoint
     endpoint:
       method: POST
+      file_body: optional
       path: /ng/api/organizations
       item_expr: it.data.organization
       create_strategy: set-fields
@@ -623,7 +638,7 @@ commands:
       path: /ng/api/projects/{{ctx.id}}
       item_expr: it.data
       update_strategy: get-then-put
-      update_body_pick: it.project
+      update_body_pick: it.data.project
       update_body_wrap: project
       query_params:
         accountIdentifier: auth.account
@@ -639,6 +654,7 @@ commands:
     handler_type: endpoint
     endpoint:
       method: POST
+      file_body: optional
       path: /ng/api/projects
       item_expr: it.data
       create_strategy: set-fields
@@ -1059,10 +1075,11 @@ commands:
       del: true
     endpoint:
       method: PUT
+      file_body: optional
       path: /ng/api/connectors
       get_path: /ng/api/connectors/{{ctx.id}}
       update_strategy: get-then-put
-      update_body_pick: it.connector
+      update_body_pick: it.data.connector
       update_body_wrap: connector
       item_expr: it.data
       text_header: "\nUpdated connector {{ctx.id}}\n"
@@ -1133,6 +1150,7 @@ commands:
     handler_type: endpoint
     endpoint:
       method: POST
+      file_body: optional
       path: /ng/api/v2/secrets
       item_expr: it.data
       create_strategy: set-fields
@@ -1165,7 +1183,7 @@ commands:
       path: /ng/api/v2/secrets/{{ctx.id}}
       item_expr: it.data
       update_strategy: get-then-put
-      update_body_pick: it.secret
+      update_body_pick: it.data.secret
       update_body_wrap: secret
       query_params:
         accountIdentifier: auth.account

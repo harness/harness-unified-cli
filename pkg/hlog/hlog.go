@@ -6,15 +6,37 @@ package hlog
 import (
 	"log/slog"
 	"os"
+	"sync/atomic"
 
 	"github.com/lmittmann/tint"
 	"golang.org/x/term"
 )
 
-func newHandler(w *os.File, level slog.Level) slog.Handler {
-	if term.IsTerminal(int(w.Fd())) {
-		return tint.NewHandler(w, &tint.Options{
-			Level:      level,
+// logState holds all settings that influence how the logger is built.
+// reinit() reads this and rebuilds the active logger from scratch.
+type logState struct {
+	file       *os.File  // nil means stderr
+	level      slog.Level
+	pluginName string
+}
+
+var state logState
+var active atomic.Pointer[slog.Logger]
+
+func init() {
+	active.Store(slog.New(slog.DiscardHandler))
+}
+
+func reinit() {
+	w := state.file
+	if w == nil {
+		w = os.Stderr
+	}
+
+	var h slog.Handler
+	if state.file == nil && term.IsTerminal(int(w.Fd())) {
+		h = tint.NewHandler(w, &tint.Options{
+			Level:      state.level,
 			TimeFormat: "15:04:05",
 			ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
 				if a.Value.Kind() == slog.KindAny {
@@ -25,42 +47,71 @@ func newHandler(w *os.File, level slog.Level) slog.Handler {
 				return a
 			},
 		})
+	} else {
+		h = slog.NewTextHandler(w, &slog.HandlerOptions{Level: state.level})
 	}
-	return slog.NewTextHandler(w, &slog.HandlerOptions{Level: level})
+
+	l := slog.New(h)
+	if state.pluginName != "" {
+		l = l.With("plugin", state.pluginName)
+	}
+	active.Store(l)
 }
 
-var logger = slog.New(slog.DiscardHandler)
-var pluginName string
-
-func applyPlugin(l *slog.Logger) *slog.Logger {
-	if pluginName != "" {
-		return l.With("plugin", pluginName)
-	}
-	return l
-}
-
-// SetDebug switches the logger to DEBUG level.
+// SetDebug switches the logger to DEBUG level. If no log file is configured, output goes to stderr.
 func SetDebug() {
-	logger = applyPlugin(slog.New(newHandler(os.Stderr, slog.LevelDebug)))
+	state.level = slog.LevelDebug
+	reinit()
 }
 
 // SetDebugFile opens path for append and switches the logger to DEBUG level writing to that file.
-// If the file cannot be opened, the logger is left as-is (discard).
+// If the file cannot be opened, the logger is left as-is.
 func SetDebugFile(path string) {
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
 		return
 	}
-	logger = applyPlugin(slog.New(slog.NewTextHandler(f, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	state.level = slog.LevelDebug
+	state.file = f
+	reinit()
 }
 
-// SetPlugin records the plugin name and adds it as an attribute to every subsequent log line.
+// SetLogFile redirects log output (at INFO level) to path. Used when HARNESS_CLI_LOGFILE is set.
+// If the file cannot be opened, the logger is left as-is.
+func SetLogFile(path string) {
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		return
+	}
+	state.file = f
+	reinit()
+}
+
+// SetPlugin records the plugin name so it appears on every subsequent log line.
 func SetPlugin(name string) {
-	pluginName = name
-	logger = logger.With("plugin", name)
+	state.pluginName = name
+	reinit()
 }
 
-func Debug(msg string, args ...any) { logger.Debug(msg, args...) }
-func Info(msg string, args ...any)  { logger.Info(msg, args...) }
-func Warn(msg string, args ...any)  { logger.Warn(msg, args...) }
-func Error(msg string, args ...any) { logger.Error(msg, args...) }
+// SilenceForTUI suppresses log output while a Bubble Tea program owns the
+// terminal. Returns the previous logger so RestoreAfterTUI can swap it back.
+// When logging to a file there is no stderr conflict, so this is a no-op.
+func SilenceForTUI() *slog.Logger {
+	if state.file != nil {
+		return active.Load()
+	}
+	return active.Swap(slog.New(slog.DiscardHandler))
+}
+
+// RestoreAfterTUI restores the logger saved by SilenceForTUI.
+func RestoreAfterTUI(prev *slog.Logger) {
+	if state.file != nil {
+		return
+	}
+	active.Store(prev)
+}
+
+func Debug(msg string, args ...any) { active.Load().Debug(msg, args...) }
+func Info(msg string, args ...any)  { active.Load().Info(msg, args...) }
+func Warn(msg string, args ...any)  { active.Load().Warn(msg, args...) }
+func Error(msg string, args ...any) { active.Load().Error(msg, args...) }

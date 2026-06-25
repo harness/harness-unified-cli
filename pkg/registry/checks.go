@@ -190,6 +190,15 @@ func validateEndpointConstraints(cs *spec.CommandSpec) error {
 	default:
 		return fmt.Errorf("command %q: invalid file_body %q (must be \"optional\" or \"required\")", cs.Command, ep.FileBody)
 	}
+	switch ep.ContentType {
+	case "", "application/json", "application/yaml":
+		// valid
+	default:
+		return fmt.Errorf("command %q: invalid content_type %q (must be \"application/json\" or \"application/yaml\")", cs.Command, ep.ContentType)
+	}
+	if ep.ContentType != "" && ep.FileBody == spec.FileBodyNone {
+		return fmt.Errorf("command %q: content_type requires file_body to be set", cs.Command)
+	}
 	return nil
 }
 

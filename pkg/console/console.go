@@ -117,6 +117,11 @@ func RedX() string {
 	return WithColor(ColorRed, "✗")
 }
 
+// YellowWarning returns a yellow ⚠ when stdout is a TTY, or plain "⚠" otherwise.
+func YellowWarning() string {
+	return WithColor(ColorYellow, "⚠")
+}
+
 // PrintError prints msg to stderr. On a TTY the text is red; otherwise plain.
 func PrintError(msg string) {
 	if ensureTTY() {
