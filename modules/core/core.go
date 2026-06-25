@@ -19,6 +19,7 @@ const (
 	envHandlerID        = "env"
 	tokenHandlerID      = "token"
 	ssoRefreshHandlerID = "sso_refresh"
+	ssoStatusHandlerID  = "sso_status"
 	profilesFetchFnID   = "profiles_fetch"
 
 	// mgmt
@@ -42,6 +43,7 @@ func ModuleInit(reg registry.ModuleRegistrar) {
 	reg.RegisterWorkflow(envHandlerID, auth.EnvHandler)
 	reg.RegisterWorkflow(tokenHandlerID, auth.TokenHandler)
 	reg.RegisterWorkflow(ssoRefreshHandlerID, auth.SSORefreshHandler)
+	reg.RegisterWorkflow(ssoStatusHandlerID, auth.SSOStatusHandler)
 	reg.RegisterFetchFn(profilesFetchFnID, auth.ProfilesFetchFn)
 	reg.RegisterWorkflow(debugUpdateCheckHandlerID, mgmt.DebugUpdateCheckHandler)
 	reg.RegisterWorkflow(versionHandlerID, mgmt.VersionHandler)

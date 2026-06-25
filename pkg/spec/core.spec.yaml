@@ -227,6 +227,18 @@ commands:
     workflow_id: sso_refresh
     flags: []
 
+  - command: auth sso_status
+    verb: auth
+    noun: sso_status
+    short: Show SSO token expiry and decoded JWT claims
+    hidden: true
+    no_auth: true
+    handler_type: workflow
+    workflow_id: sso_status
+    flags:
+      - name: profile
+        description: Profile to inspect (default "default")
+
   - command: version
     verb: version
     short: Print the harness CLI version

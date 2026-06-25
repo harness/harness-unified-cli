@@ -248,8 +248,12 @@ func runStatusChecks(profileFlag string) statusResult {
 		return r
 	}
 	r.Status.Project = &checkResult{OK: true, Name: projectName}
+	uiBase := resolved.UIUrl
+	if uiBase == "" {
+		uiBase = resolved.APIUrl
+	}
 	r.ProjectURL = fmt.Sprintf("%s/ng/account/%s/all/orgs/%s/projects/%s/overview",
-		resolved.APIUrl, resolved.AccountID, resolved.OrgID, resolved.ProjectID)
+		uiBase, resolved.AccountID, resolved.OrgID, resolved.ProjectID)
 
 	return r
 }
@@ -491,66 +495,36 @@ func fetchCurrentUser(c *http.Client, a *auth.ResolvedAuth) (any, error) {
 
 func checkAccount(c *http.Client, a *auth.ResolvedAuth) (string, error) {
 	url := fmt.Sprintf("%s/ng/api/accounts/%s?accountIdentifier=%s", a.APIUrl, a.AccountID, a.AccountID)
-	body, status, err := doGet(c, url, a)
-	if err != nil {
-		return "", err
-	}
-	switch status {
-	case 200:
-		name := jsonStringAt(body, "data", "name")
-		if name == "" {
-			name = a.AccountID
-		}
-		return name, nil
-	case 403:
-		return "", fmt.Errorf("access denied (403) — check account ID or RBAC permissions")
-	case 404:
-		return "", fmt.Errorf("account %q not found (404)", a.AccountID)
-	default:
-		return "", fmt.Errorf("API error %d: %s", status, apiErrMsg(status, body))
-	}
+	return checkResource(c, a, url, "account", a.AccountID, "access denied (403) — check account ID or RBAC permissions", "data", "name")
 }
 
 func checkOrg(c *http.Client, a *auth.ResolvedAuth) (string, error) {
 	url := fmt.Sprintf("%s/ng/api/organizations/%s?accountIdentifier=%s", a.APIUrl, a.OrgID, a.AccountID)
-	body, status, err := doGet(c, url, a)
-	if err != nil {
-		return "", err
-	}
-	switch status {
-	case 200:
-		name := jsonStringAt(body, "data", "organization", "name")
-		if name == "" {
-			name = a.OrgID
-		}
-		return name, nil
-	case 403:
-		return "", fmt.Errorf("access denied (403)")
-	case 404:
-		return "", fmt.Errorf("org %q not found (404)", a.OrgID)
-	default:
-		return "", fmt.Errorf("API error %d: %s", status, apiErrMsg(status, body))
-	}
+	return checkResource(c, a, url, "org", a.OrgID, "access denied (403)", "data", "organization", "name")
 }
 
 func checkProject(c *http.Client, a *auth.ResolvedAuth) (string, error) {
 	url := fmt.Sprintf("%s/ng/api/projects/%s?accountIdentifier=%s&orgIdentifier=%s",
 		a.APIUrl, a.ProjectID, a.AccountID, a.OrgID)
+	return checkResource(c, a, url, "project", a.ProjectID, "access denied (403)", "data", "project", "name")
+}
+
+func checkResource(c *http.Client, a *auth.ResolvedAuth, url, entityType, entityID, forbidden string, jsonPath ...string) (string, error) {
 	body, status, err := doGet(c, url, a)
 	if err != nil {
 		return "", err
 	}
 	switch status {
 	case 200:
-		name := jsonStringAt(body, "data", "project", "name")
+		name := jsonStringAt(body, jsonPath...)
 		if name == "" {
-			name = a.ProjectID
+			name = entityID
 		}
 		return name, nil
 	case 403:
-		return "", fmt.Errorf("access denied (403)")
+		return "", fmt.Errorf("%s", forbidden)
 	case 404:
-		return "", fmt.Errorf("project %q not found (404)", a.ProjectID)
+		return "", fmt.Errorf("%s %q not found (404)", entityType, entityID)
 	default:
 		return "", fmt.Errorf("API error %d: %s", status, apiErrMsg(status, body))
 	}

@@ -220,7 +220,11 @@ func injectUrlFn(env map[string]any, ctx *cmdctx.Ctx, noun *spec.NounDef) {
 			return ""
 		}
 		result, _ := ResolvePath(WithIt(urlEnv, it), template)
-		return strings.TrimRight(ctx.Auth.APIUrl, "/") + result
+		uiBase := ctx.Auth.UIUrl
+		if uiBase == "" {
+			uiBase = ctx.Auth.APIUrl
+		}
+		return strings.TrimRight(uiBase, "/") + result
 	}
 	env["url"] = urlFn
 

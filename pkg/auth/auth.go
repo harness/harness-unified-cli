@@ -30,6 +30,7 @@ type ResolvedAuth struct {
 	Source      string   // "profile:<name>" or SourceEnv
 	AuthType    AuthType // AuthTypePAT or AuthTypeSSO
 	APIUrl      string
+	UIUrl       string   // Harness UI base URL; only set for SSO profiles (from JWT subdomain)
 	AccountID   string
 	OrgID       string
 	ProjectID   string
@@ -167,6 +168,7 @@ func resolveProfile(name string) (*ResolvedAuth, error) {
 		Source:      "profile:" + name,
 		AuthType:    authType,
 		APIUrl:      apiURL,
+		UIUrl:       p.UIUrl,
 		AccountID:   p.AccountID,
 		OrgID:       p.OrgID,
 		ProjectID:   p.ProjectID,

@@ -110,6 +110,7 @@ func LoginSSOHandler(ctx *cmdctx.Ctx) error {
 
 	cfg.Profiles[profileName] = &config.Profile{
 		APIUrl:    apiURL,
+		UIUrl:     resolveUIURL(subdomain),
 		AccountID: accountID,
 		OrgID:     orgID,
 		ProjectID: projectID,
@@ -132,6 +133,16 @@ func LoginSSOHandler(ctx *cmdctx.Ctx) error {
 // subdomain in the JWT; the gateway handles cluster routing internally.
 func resolveAPIURL(token, accountID, subdomain string) (string, error) {
 	return mcpBaseURL, nil
+}
+
+// resolveUIURL returns the Harness UI base URL for a user's account.
+// Uses the subdomain from JWT claims (e.g. "prod2.harness.io" → "https://prod2.harness.io").
+// Falls back to "https://app.harness.io" when the subdomain is empty.
+func resolveUIURL(subdomain string) string {
+	if subdomain != "" {
+		return "https://" + subdomain
+	}
+	return "https://app.harness.io"
 }
 
 // --- PKCE flow ---
