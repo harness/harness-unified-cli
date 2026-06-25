@@ -24,13 +24,19 @@ import (
 
 // WizardResult is returned by RunLoginWizard on success.
 type WizardResult struct {
-	APIURL  string
-	Token   string
-	Account string
-	RegURL  string
-	OrgID   string
-	Project string
+	APIURL      string
+	Token       string
+	Account     string
+	RegURL      string
+	OrgID       string
+	Project     string
+	ScopeNotSet    bool // true when org/project not configured — caller should prompt setscope
+	ScopeSkipped   bool // true when user explicitly chose to save without selecting org/project
 }
+
+// errNoEnumPerms is set as cancelReason when a token can't list orgs/projects.
+// RunLoginWizard treats this as a partial success rather than a user cancel.
+var errNoEnumPerms = fmt.Errorf("token lacks permission to list organizations — run 'harness auth setscope' to configure org and project")
 
 // WizardExisting carries values from an already-saved profile so the wizard
 // can offer "use existing" options instead of requiring re-entry.
@@ -144,6 +150,7 @@ type wizardModel struct {
 	err          string
 	canceled     bool
 	cancelReason error // set when canceled due to an internal error, not user action
+	scopeSkipped bool  // user chose to save without selecting org/project
 	width        int
 	height       int
 }
@@ -328,6 +335,20 @@ func (m wizardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Quit
 			}
 
+		case "s":
+			if !m.setMode {
+				switch m.step {
+				case stepOrgPick:
+					m.scopeSkipped = true
+					m.step = stepDone
+					return m, tea.Quit
+				case stepProjectPick:
+					m.scopeSkipped = true
+					m.step = stepDone
+					return m, tea.Quit
+				}
+			}
+
 		case "enter":
 			return m.handleEnter()
 		}
@@ -355,11 +376,25 @@ func (m wizardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.cancelReason = msg.err
 				return m, tea.Quit
 			}
+			// SAT/PAT tokens may lack org-list permissions — treat as partial success.
+			tokenKind := pkgauth.TokenType(m.token)
+			if (tokenKind == pkgauth.TokenKindSAT || tokenKind == pkgauth.TokenKindPAT) && strings.Contains(msg.err.Error(), "403") {
+				m.canceled = true
+				m.cancelReason = errNoEnumPerms
+				return m, tea.Quit
+			}
 			m.step = stepToken
 			m.tokenInCustom = true
 			m.tokenInput.Focus()
 			m.err = msg.err.Error()
 			return m, textinput.Blink
+		}
+		// SAT/PAT token with no visible orgs — same treatment as 403.
+		tokenKind := pkgauth.TokenType(m.token)
+		if len(msg.orgs) == 0 && (tokenKind == pkgauth.TokenKindSAT || tokenKind == pkgauth.TokenKindPAT) {
+			m.canceled = true
+			m.cancelReason = errNoEnumPerms
+			return m, tea.Quit
 		}
 		items := make([]list.Item, len(msg.orgs))
 		for i, o := range msg.orgs {
@@ -379,6 +414,13 @@ func (m wizardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case projectsDoneMsg:
 		if msg.err != nil {
+			// SAT/PAT tokens may lack project-list permissions — treat as partial success.
+			tokenKind := pkgauth.TokenType(m.token)
+			if (tokenKind == pkgauth.TokenKindSAT || tokenKind == pkgauth.TokenKindPAT) && strings.Contains(msg.err.Error(), "403") {
+				m.canceled = true
+				m.cancelReason = errNoEnumPerms
+				return m, tea.Quit
+			}
 			m.step = stepOrgPick
 			m.err = msg.err.Error()
 			return m, nil
@@ -568,7 +610,7 @@ func (m wizardModel) View() tea.View {
 		b.WriteString(st.prompt.Render("Harness PAT/SAT") + "\n")
 		if m.tokenHasExisting && !m.tokenInCustom {
 			tokenLabels := []string{
-				"Use existing  (" + maskedToken(m.existingToken) + ")",
+				"Use existing  (" + pkgauth.MaskedToken(m.existingToken) + ")",
 				"Enter new token...",
 			}
 			renderPicker(&b, st, tokenLabels, m.tokenPickIdx)
@@ -580,13 +622,13 @@ func (m wizardModel) View() tea.View {
 
 	case stepValidating:
 		b.WriteString(st.selected.Render("✓ ") + st.subtle.Render("API URL: "+m.apiURL) + "\n")
-		b.WriteString(st.selected.Render("✓ ") + st.subtle.Render("Token: "+masked(m.token)) + "\n\n")
+		b.WriteString(st.selected.Render("✓ ") + st.subtle.Render("Token: "+pkgauth.Masked(m.token)) + "\n\n")
 		b.WriteString(m.spin.View() + " Validating credentials…\n")
 
 	case stepOrgLoad, stepOrgPick, stepProjectLoad:
 		if !m.setMode {
 			b.WriteString(st.selected.Render("✓ ") + st.subtle.Render("API URL: "+m.apiURL) + "\n")
-			b.WriteString(st.selected.Render("✓ ") + st.subtle.Render("Token: "+masked(m.token)) + "\n\n")
+			b.WriteString(st.selected.Render("✓ ") + st.subtle.Render("Token: "+pkgauth.Masked(m.token)) + "\n\n")
 		}
 		if m.step == stepOrgLoad {
 			b.WriteString(m.spin.View() + " Loading organizations…\n")
@@ -599,17 +641,21 @@ func (m wizardModel) View() tea.View {
 			if m.setMode {
 				escHint = "esc to cancel"
 			}
-			b.WriteString(st.subtle.Render("  / to filter · enter to select · "+escHint) + "\n")
+			saveHint := " · s to save without org/project"
+			if m.setMode {
+				saveHint = ""
+			}
+			b.WriteString(st.subtle.Render("  / to filter · enter to select · "+escHint+saveHint) + "\n")
 		}
 
 	case stepProjectPick:
 		if !m.setMode {
 			b.WriteString(st.selected.Render("✓ ") + st.subtle.Render("API URL: "+m.apiURL) + "\n")
-			b.WriteString(st.selected.Render("✓ ") + st.subtle.Render("Token: "+masked(m.token)) + "\n")
+			b.WriteString(st.selected.Render("✓ ") + st.subtle.Render("Token: "+pkgauth.Masked(m.token)) + "\n")
 		}
 		b.WriteString(st.selected.Render("✓ ") + st.subtle.Render("Org: "+m.orgID) + "\n\n")
 		b.WriteString(st.box.Render(m.projList.View()) + "\n")
-		b.WriteString(st.subtle.Render("  / to filter · enter to select · esc to change org") + "\n")
+		b.WriteString(st.subtle.Render("  / to filter · enter to select · esc to change org · s to save without project") + "\n")
 	}
 
 	if m.err != "" {
@@ -747,7 +793,7 @@ func deepGet(m map[string]any, path string) string {
 }
 
 func validateAndFetch(apiURL, token string) (accountID, regURL string, err error) {
-	accountID = accountIDFromToken(token)
+	accountID = pkgauth.AccountIDFromToken(token)
 	if accountID == "" {
 		return "", "", fmt.Errorf("token does not look like a Harness PAT/SAT (expected pat.<accountID>.<...> or sat.<accountID>.<...>)")
 	}
@@ -757,7 +803,7 @@ func validateAndFetch(apiURL, token string) (accountID, regURL string, err error
 		PATToken:  token,
 		AccountID: accountID,
 	})
-	if strings.HasPrefix(token, "sat.") {
+	if pkgauth.TokenType(token) == pkgauth.TokenKindSAT {
 		if _, _, err := c.PostRaw("/ng/api/token/validate", map[string]string{"accountIdentifier": accountID}, token, "text/plain"); err != nil {
 			return "", "", err
 		}
@@ -769,15 +815,6 @@ func validateAndFetch(apiURL, token string) (accountID, regURL string, err error
 	regURL, _ = fetchRegistryURL(apiURL, token, accountID)
 	return accountID, regURL, nil
 }
-
-func accountIDFromToken(token string) string {
-	parts := strings.SplitN(token, ".", 4)
-	if len(parts) == 4 && (parts[0] == "pat" || parts[0] == "sat") {
-		return parts[1]
-	}
-	return ""
-}
-
 
 // --- RunLoginWizard / RunSetWizard ---
 
@@ -795,8 +832,31 @@ func RunLoginWizard(ctx *cmdctx.Ctx, existing *WizardExisting) (*WizardResult, e
 		return nil, err
 	}
 	fm := final.(wizardModel)
-	if fm.canceled || fm.step != stepDone {
+	if fm.canceled {
+		if fm.cancelReason == errNoEnumPerms {
+			return &WizardResult{
+				APIURL:      fm.apiURL,
+				Token:       fm.token,
+				Account:     fm.accountID,
+				RegURL:      fm.regURL,
+				ScopeNotSet: true,
+			}, nil
+		}
 		return nil, nil
+	}
+	if fm.step != stepDone {
+		return nil, nil
+	}
+	if fm.scopeSkipped {
+		return &WizardResult{
+			APIURL:       fm.apiURL,
+			Token:        fm.token,
+			Account:      fm.accountID,
+			RegURL:       fm.regURL,
+			OrgID:        fm.orgID,
+			ScopeNotSet:  true,
+			ScopeSkipped: true,
+		}, nil
 	}
 	return &WizardResult{
 		APIURL:  fm.apiURL,
@@ -901,22 +961,6 @@ func RunSetWizard(ctx *cmdctx.Ctx, in *SetWizardInput) (*WizardResult, error) {
 
 // --- helpers ---
 
-func masked(s string) string {
-	if len(s) <= 8 {
-		return strings.Repeat("•", len(s))
-	}
-	return s[:4] + strings.Repeat("•", len(s)-8) + s[len(s)-4:]
-}
-
-// maskedToken shows pat.<accountID> in the clear and masks the remaining segments.
-// Falls back to masked() for non-PAT tokens.
-func maskedToken(s string) string {
-	parts := strings.SplitN(s, ".", 4)
-	if len(parts) == 4 && parts[0] == "pat" {
-		return "pat." + parts[1] + "." + strings.Repeat("•", len(parts[2])) + "." + strings.Repeat("•", len(parts[3]))
-	}
-	return masked(s)
-}
 
 func truncate(s string, n int) string {
 	if len(s) <= n {

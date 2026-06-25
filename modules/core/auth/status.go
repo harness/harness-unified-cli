@@ -109,7 +109,7 @@ func runStatusChecks(profileFlag string) statusResult {
 	r.AccountID = resolved.AccountID
 	r.OrgID = resolved.OrgID
 	r.ProjectID = resolved.ProjectID
-	r.IsSAT = strings.HasPrefix(resolved.PATToken, "sat.")
+	r.IsSAT = auth.TokenType(resolved.PATToken) == auth.TokenKindSAT
 	r.Status.Profile = checkResult{OK: true}
 
 	if err := checkAPIUrl(resolved.APIUrl); err != nil {
@@ -133,7 +133,7 @@ func runStatusChecks(profileFlag string) statusResult {
 	}
 
 	c := &http.Client{Timeout: 10 * time.Second}
-	isSAT := strings.HasPrefix(resolved.PATToken, "sat.")
+	isSAT := auth.TokenType(resolved.PATToken) == auth.TokenKindSAT
 	if isSAT {
 		identity, err := validateSATToken(c, resolved)
 		if err != nil {
