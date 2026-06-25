@@ -162,6 +162,7 @@ commands:
       del: true
     endpoint:
       method: PUT
+      file_body: optional
       path: /ng/api/servicesV2
       get_path: /ng/api/servicesV2/{{ctx.id}}
       update_strategy: get-then-put
@@ -248,6 +249,7 @@ commands:
       del: true
     endpoint:
       method: PUT
+      file_body: optional
       path: /ng/api/environmentsV2
       get_path: /ng/api/environmentsV2/{{ctx.id}}
       update_strategy: get-then-put
@@ -343,6 +345,7 @@ commands:
       del: true
     endpoint:
       method: PUT
+      file_body: optional
       path: /ng/api/infrastructures
       get_path: /ng/api/infrastructures/{{ctx.id}}
       update_strategy: get-then-put
@@ -432,6 +435,7 @@ commands:
       del: true
     endpoint:
       method: PUT
+      file_body: optional
       path: /ng/api/serviceOverrides
       get_path: /ng/api/serviceOverrides/{{ctx.id}}
       update_strategy: get-then-put
