@@ -53,6 +53,7 @@ const (
 
 	// Env var names for env-var auth mode.
 	EnvAPIKey      = "HARNESS_API_KEY"
+	EnvAPIJWT      = "HARNESS_API_JWT"
 	EnvAccount     = "HARNESS_ACCOUNT"
 	EnvAPIURL      = "HARNESS_API_URL"
 	EnvOrg         = "HARNESS_ORG"

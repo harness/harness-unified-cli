@@ -191,7 +191,11 @@ commands:
     no_auth: true
     handler_type: workflow
     workflow_id: status
-    flags: []
+    flags:
+      - name: token-status
+        is_bool: true
+        hidden: true
+        description: Show SSO token and refresh token expiration times
 
   - command: auth env
     verb: auth
@@ -212,6 +216,15 @@ commands:
     no_auth: true
     handler_type: workflow
     workflow_id: token
+    flags: []
+
+  - command: auth sso_refresh
+    verb: auth
+    noun: sso_refresh
+    short: Refresh the SSO access token using the saved refresh token
+    no_auth: true
+    handler_type: workflow
+    workflow_id: sso_refresh
     flags: []
 
   - command: version

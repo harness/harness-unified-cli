@@ -11,14 +11,15 @@ import (
 
 const (
 	// auth
-	loginHandlerID    = "login"
-	loginSSOHandlerID = "loginsso"
-	logoutHandlerID   = "logout"
-	statusHandlerID   = "status"
-	setHandlerID      = "set"
-	envHandlerID      = "env"
-	tokenHandlerID    = "token"
-	profilesFetchFnID = "profiles_fetch"
+	loginHandlerID      = "login"
+	loginSSOHandlerID   = "loginsso"
+	logoutHandlerID     = "logout"
+	statusHandlerID     = "status"
+	setHandlerID        = "set"
+	envHandlerID        = "env"
+	tokenHandlerID      = "token"
+	ssoRefreshHandlerID = "sso_refresh"
+	profilesFetchFnID   = "profiles_fetch"
 
 	// mgmt
 	debugUpdateCheckHandlerID = "debug_update_check"
@@ -40,6 +41,7 @@ func ModuleInit(reg registry.ModuleRegistrar) {
 	reg.RegisterWorkflow(setHandlerID, auth.SetHandler)
 	reg.RegisterWorkflow(envHandlerID, auth.EnvHandler)
 	reg.RegisterWorkflow(tokenHandlerID, auth.TokenHandler)
+	reg.RegisterWorkflow(ssoRefreshHandlerID, auth.SSORefreshHandler)
 	reg.RegisterFetchFn(profilesFetchFnID, auth.ProfilesFetchFn)
 	reg.RegisterWorkflow(debugUpdateCheckHandlerID, mgmt.DebugUpdateCheckHandler)
 	reg.RegisterWorkflow(versionHandlerID, mgmt.VersionHandler)
