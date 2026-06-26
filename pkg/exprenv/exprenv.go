@@ -68,13 +68,18 @@ func Make(ctx *cmdctx.Ctx) map[string]any {
 		},
 		"auth": func() map[string]any {
 			if a == nil {
-				return map[string]any{"account": "", "org": "", "project": "", "scope": ""}
+				return map[string]any{"account": "", "org": "", "project": "", "scope": "", "ui_url": ""}
+			}
+			uiURL := a.UIUrl
+			if uiURL == "" {
+				uiURL = a.APIUrl
 			}
 			return map[string]any{
 				"account": a.AccountID,
 				"org":     a.OrgID,
 				"project": a.ProjectID,
 				"scope":   strings.Join(parts, "/"),
+				"ui_url":  uiURL,
 			}
 		}(),
 		"flags":                 flags,

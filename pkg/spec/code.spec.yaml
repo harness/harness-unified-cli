@@ -459,6 +459,43 @@ commands:
 
   # ── pr ──────────────────────────────────────────────────────────────────────
 
+  - command: list pr:mine
+    verb: list
+    noun: pr
+    noun_variant: mine
+    short: "List pull requests you authored, across all repos: harness list pr:mine [--state open|closed|merged|all]"
+    handler_type: endpoint
+    flags:
+      - name: state
+        description: "Filter by state: open, closed, merged, all"
+        default: open
+        completion_values: [open, closed, merged, all]
+      - name: created-after
+        description: "Show PRs created after this date (YYYY-MM-DD, relative like 30d/2w/1m (m=month), or epoch ms)"
+      - name: created-before
+        description: "Show PRs created before this date (YYYY-MM-DD, relative like 30d/2w/1m (m=month), or epoch ms)"
+    endpoint:
+      path: /code/api/v1/pullreq
+      fetch_fn: list_mine_pr_fetch
+      items_expr: it
+      get_id_expr: string(it.number)
+      paging:
+        paging_strategy: page_header
+        countable: false
+        page_index_param: page
+        page_size_param: limit
+        page_size_default: 30
+        page_size_max: 100
+        page_base: 1
+      fields_extra:
+        - id: repo
+          label: Repo
+          expr: it.repository.identifier
+        - id: url
+          label: URL
+          expr: auth.ui_url + "/ng/account/" + auth.account + "/all/code/orgs/" + auth.org + "/projects/" + auth.project + "/repos/" + it.repository.identifier + "/pulls/" + string(it.number) + "/conversation"
+      columns: [repo, number, title, state, source_branch, target_branch, updated]
+
   - command: list pr
     verb: list
     noun: pr

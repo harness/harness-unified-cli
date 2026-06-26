@@ -15,4 +15,5 @@ func ModuleInit(reg registry.ModuleRegistrar) {
 	reg.RegisterBodyFn(mergePRBodyFnID, mergePRBodyFn)
 	reg.RegisterBodyFn(createPRCommentBodyFnID, createPRCommentBodyFn)
 	reg.RegisterBodyFn(createPRBodyFnID, createPRBodyFn)
+	reg.RegisterFetchFn(listMinePRFetchFnID, listMinePRFetchFn)
 }
