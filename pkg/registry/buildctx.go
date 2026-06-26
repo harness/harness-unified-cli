@@ -270,6 +270,9 @@ func buildCtx(cmd *cobra.Command, cs *spec.CommandSpec, args []string, r *Regist
 	}
 	ctx.FlagValues = buildFlagValues(cmd.Flags(), cs)
 	ctx.Resolver = r
+	if err := resolveFlagValues(ctx, cs); err != nil {
+		return nil, err
+	}
 	for _, f := range cs.Flags {
 		if f.Required && cmdctx.GetString(ctx.FlagValues, f.Name) == "" {
 			if len(f.CompletionValues) > 0 {
@@ -301,6 +304,31 @@ func buildDetailCtx(parent *cmdctx.Ctx, cs *spec.CommandSpec, id string) *cmdctx
 		FormatFlags: cmdctx.FormatFlags{Format: "text"},
 		FlagValues:  map[string]any{},
 	}
+}
+
+// resolveFlagValues runs any flag_resolve_fn declared on spec flags, overwriting
+// the raw string value in ctx.FlagValues with the resolved result. Skips flags
+// whose value is empty. Called after buildFlagValues and auth resolution.
+func resolveFlagValues(ctx *cmdctx.Ctx, cs *spec.CommandSpec) error {
+	for _, f := range cs.Flags {
+		if f.FlagResolveFn == "" {
+			continue
+		}
+		raw, _ := ctx.FlagValues[f.Name].(string)
+		if raw == "" {
+			continue
+		}
+		fn := ctx.Resolver.ResolveFlagResolveFn(f.FlagResolveFn)
+		if fn == nil {
+			return fmt.Errorf("flag_resolve_fn %q not registered", f.FlagResolveFn)
+		}
+		resolved, err := fn(ctx, raw)
+		if err != nil {
+			return fmt.Errorf("--%s: %w", f.Name, err)
+		}
+		ctx.FlagValues[f.Name] = resolved
+	}
+	return nil
 }
 
 func validateIdParts(cs *spec.CommandSpec, vspec VerbSpec, ctx *cmdctx.Ctx) error {

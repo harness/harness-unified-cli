@@ -93,6 +93,7 @@ type Flag struct {
 	CompletionFn     string   `yaml:"completion_fn,omitempty"`     // registered FlagCompletionFn name (overrides completion_noun)
 	CompletionValues []string `yaml:"completion_values,omitempty"` // static list of completion values (overrides completion_noun/fn)
 	ParentFromArg    int      `yaml:"parent_from_arg,omitempty"`   // positional arg index to use as parentId when calling completion_noun list endpoint
+	FlagResolveFn    string   `yaml:"flag_resolve_fn,omitempty"`   // registered FlagResolveFn name; transforms the raw flag string value before CEL evaluation
 }
 
 // ModuleMeta holds metadata declared at the top level of a spec file.

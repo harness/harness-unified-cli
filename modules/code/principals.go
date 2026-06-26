@@ -5,11 +5,44 @@ package code
 
 import (
 	"fmt"
+	"regexp"
+	"strings"
 	"sync"
 
 	"github.com/harness/harness-cli/pkg/client"
 	"github.com/harness/harness-cli/pkg/cmdctx"
 )
+
+// harnessUIDRe matches a Harness UID: exactly 22 base64url characters ([A-Za-z0-9_-]).
+var harnessUIDRe = regexp.MustCompile(`^[A-Za-z0-9_-]{22}$`)
+
+// numericRe matches a bare positive integer (numeric principal ID).
+var numericRe = regexp.MustCompile(`^[0-9]+$`)
+
+// resolvePrincipalID resolves an --author flag value to a Code numeric principal
+// ID string. Accepts:
+//   - email (contains "@")         → resolved via email lookup
+//   - Harness UID (22 base64url chars) → resolved via UID lookup
+//   - numeric string               → passed through as-is
+//   - anything else                → error
+func resolvePrincipalID(ctx *cmdctx.Ctx, raw string) (string, error) {
+	var id int
+	var err error
+	switch {
+	case strings.Contains(raw, "@"):
+		id, err = PrincipalIDFromEmail(ctx, raw)
+	case harnessUIDRe.MatchString(raw):
+		id, err = PrincipalIDFromUID(ctx, raw)
+	case numericRe.MatchString(raw):
+		return raw, nil
+	default:
+		return "", fmt.Errorf("%q is not a valid author: expected an email, a 22-char Harness UID, or a numeric principal ID", raw)
+	}
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%d", id), nil
+}
 
 var (
 	cachedPrincipalID  int

@@ -28,6 +28,7 @@ type ModuleRegistrar interface {
 	RegisterFollowFn(shortID string, fn cmdctx.FollowFn)
 	RegisterFetchFn(shortID string, fn cmdctx.FetchFn)
 	RegisterFlagCompletionFn(shortID string, fn FlagCompletionFn)
+	RegisterFlagResolveFn(shortID string, fn cmdctx.FlagResolveFn)
 	RegisterEndpointValidatorFn(shortID string, fn cmdctx.EndpointValidatorFn)
 }
 
@@ -95,6 +96,9 @@ func (m *moduleRegistrar) Register(cs *spec.CommandSpec) error {
 		if cs.Flags[i].CompletionFn != "" {
 			cs.Flags[i].CompletionFn = m.qualify(cs.Flags[i].CompletionFn, fmt.Sprintf("%s flag %q completion_fn", cmd, cs.Flags[i].Name), true)
 		}
+		if cs.Flags[i].FlagResolveFn != "" {
+			cs.Flags[i].FlagResolveFn = m.qualify(cs.Flags[i].FlagResolveFn, fmt.Sprintf("%s flag %q flag_resolve_fn", cmd, cs.Flags[i].Name), true)
+		}
 	}
 	return m.reg.Register(cs)
 }
@@ -138,6 +142,12 @@ func (m *moduleRegistrar) RegisterFetchFn(shortID string, fn cmdctx.FetchFn) {
 func (m *moduleRegistrar) RegisterFlagCompletionFn(shortID string, fn FlagCompletionFn) {
 	if q := m.qualify(shortID, fmt.Sprintf("flag_completion_fn %q", shortID), false); q != "" {
 		m.reg.RegisterFlagCompletionFn(q, fn)
+	}
+}
+
+func (m *moduleRegistrar) RegisterFlagResolveFn(shortID string, fn cmdctx.FlagResolveFn) {
+	if q := m.qualify(shortID, fmt.Sprintf("flag_resolve_fn %q", shortID), false); q != "" {
+		m.reg.RegisterFlagResolveFn(q, fn)
 	}
 }
 

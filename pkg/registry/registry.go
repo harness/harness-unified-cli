@@ -57,6 +57,7 @@ type Registry struct {
 	followFns            map[string]cmdctx.FollowFn
 	fetchFns             map[string]cmdctx.FetchFn
 	flagCompletionFns    map[string]FlagCompletionFn
+	flagResolveFns       map[string]cmdctx.FlagResolveFn
 	endpointValidatorFns map[string]cmdctx.EndpointValidatorFn
 	initErrs             []string
 }
@@ -74,6 +75,7 @@ func New() *Registry {
 		followFns:            map[string]cmdctx.FollowFn{},
 		fetchFns:             map[string]cmdctx.FetchFn{},
 		flagCompletionFns:    map[string]FlagCompletionFn{},
+		flagResolveFns:       map[string]cmdctx.FlagResolveFn{},
 		endpointValidatorFns: map[string]cmdctx.EndpointValidatorFn{},
 	}
 	r.registerCoreFormatters()
@@ -244,6 +246,19 @@ func (r *Registry) RegisterFlagCompletionFn(id string, fn FlagCompletionFn) {
 		panic(fmt.Sprintf("registry: duplicate flag completion fn %q", id))
 	}
 	r.flagCompletionFns[id] = fn
+}
+
+// ResolveFlagResolveFn implements cmdctx.Resolver.
+func (r *Registry) ResolveFlagResolveFn(id string) cmdctx.FlagResolveFn {
+	return r.flagResolveFns[id]
+}
+
+// RegisterFlagResolveFn registers a fully-qualified flag resolver function ID.
+func (r *Registry) RegisterFlagResolveFn(id string, fn cmdctx.FlagResolveFn) {
+	if _, ok := r.flagResolveFns[id]; ok {
+		panic(fmt.Sprintf("registry: duplicate flag_resolve_fn %q", id))
+	}
+	r.flagResolveFns[id] = fn
 }
 
 // RegisterBodyFn registers a fully-qualified body constructor ID.
@@ -572,6 +587,9 @@ func (r *Registry) buildCmd(cs *spec.CommandSpec) *cobra.Command {
 func (r *Registry) buildAliasCmd(cs *spec.CommandSpec, aliasNoun string) *cobra.Command {
 	vspec := verbRegistry[cs.Verb]
 	use := aliasNoun
+	if cs.NounVariant != "" {
+		use += ":" + cs.NounVariant
+	}
 	if vspec.RequiresId && !cs.NoId {
 		idLabel := "<id>"
 		if cs.IdLabel != "" {

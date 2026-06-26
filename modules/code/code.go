@@ -9,6 +9,7 @@ const (
 	mergePRBodyFnID         = "merge_pr_body"
 	createPRCommentBodyFnID = "create_pr_comment_body"
 	createPRBodyFnID        = "create_pr_body"
+	resolvePrincipalIDFnID  = "resolve_principal_id"
 )
 
 func ModuleInit(reg registry.ModuleRegistrar) {
@@ -17,4 +18,5 @@ func ModuleInit(reg registry.ModuleRegistrar) {
 	reg.RegisterBodyFn(createPRBodyFnID, createPRBodyFn)
 	reg.RegisterQueryParamsFn(listMinePRQueryParamsFnID, listMinePRQueryParamsFn)
 	reg.RegisterFetchFn(listMinePRFetchFnID, listMinePRFetchFn)
+	reg.RegisterFlagResolveFn(resolvePrincipalIDFnID, resolvePrincipalID)
 }

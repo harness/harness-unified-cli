@@ -64,6 +64,11 @@ func (r *Registry) checkFunctionsSpec(cs *spec.CommandSpec) []string {
 				errs = append(errs, fmt.Sprintf("command %q: flag %q completion_fn %q not registered", cs.Command, f.Name, f.CompletionFn))
 			}
 		}
+		if f.FlagResolveFn != "" {
+			if _, ok := r.flagResolveFns[f.FlagResolveFn]; !ok {
+				errs = append(errs, fmt.Sprintf("command %q: flag %q flag_resolve_fn %q not registered", cs.Command, f.Name, f.FlagResolveFn))
+			}
+		}
 	}
 	return errs
 }

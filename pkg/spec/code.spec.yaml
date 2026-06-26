@@ -80,6 +80,7 @@ nouns:
       - id: title
         expr: it.title
         mutable_path: title
+        width_max: 60
       - id: description
         expr: it.description
         field_type: multiline_text
@@ -519,7 +520,8 @@ commands:
       - name: search
         description: Filter by keyword
       - name: author
-        description: "Filter by author principal ID (integer). Get it via: harness list pr <repo> --state all --format json | jq '.[0].author.id'"
+        description: "Filter by author (email, UUID, or numeric principal ID)"
+        flag_resolve_fn: resolve_principal_id
       - name: created-after
         description: "Show PRs created after this date (YYYY-MM-DD, relative like 30d/2w/1m (m=month), or epoch ms)"
       - name: created-before

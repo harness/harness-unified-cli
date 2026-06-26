@@ -97,12 +97,18 @@ type RawBody struct {
 	Content     string
 }
 
+// FlagResolveFn transforms a raw flag string value before it is placed into
+// the CEL expression environment. Returning ("", nil) is valid and leaves the
+// flag value as an empty string. Returning an error aborts the command.
+type FlagResolveFn func(ctx *Ctx, raw string) (string, error)
+
 // Resolver looks up registered handler functions by their fully-qualified ID.
 // The registry implements this; commands receive it via Ctx.Resolver.
 type Resolver interface {
 	ResolveTextFormatter(id string) TextFormatterFn
 	ResolveBodyFn(id string) CreateBodyFn
 	ResolveQueryParamsFn(id string) QueryParamsFn
+	ResolveFlagResolveFn(id string) FlagResolveFn
 	ResolveFetchFn(id string) (FetchFn, error)
 	ResolveEndpointValidator(id string) EndpointValidatorFn
 	GetSpec(verb, noun string) *spec.CommandSpec
