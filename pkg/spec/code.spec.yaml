@@ -79,20 +79,25 @@ nouns:
         align: right
       - id: title
         expr: it.title
+        mutable_path: title
       - id: description
         expr: it.description
         field_type: multiline_text
+        mutable_path: description
       - id: state
         expr: it.state
       - id: is_draft
         label: Draft
         expr: it.is_draft
+        mutable_path: is_draft
       - id: source_branch
         label: Source Branch
         expr: it.source_branch
+        mutable_path: source_branch
       - id: target_branch
         label: Target Branch
         expr: it.target_branch
+        mutable_path: target_branch
       - id: author
         expr: it.author.display_name
       - id: author_email
@@ -165,6 +170,10 @@ nouns:
     fields:
       - id: name
         expr: it.name
+        mutable_path: name
+      - id: target
+        expr: it.sha
+        mutable_path: target
       - id: sha
         expr: it.sha
       - id: sha8
@@ -211,10 +220,15 @@ nouns:
     fields:
       - id: name
         expr: it.name
+        mutable_path: name
+      - id: target
+        expr: it.sha
+        mutable_path: target
       - id: sha
         expr: it.sha
       - id: message
         expr: it.message
+        mutable_path: message
 
   - noun: pr_comment
     short_desc: A comment on a pull request.
@@ -456,12 +470,12 @@ commands:
     flags:
       - name: state
         description: "Filter by state: open, closed, merged, all"
-        default: all
+        default: open
         completion_values: [open, closed, merged, all]
       - name: search
         description: Filter by keyword
       - name: author
-        description: "Filter by author (principal ID number from user list)"
+        description: "Filter by author principal ID (integer). Get it via: harness list pr <repo> --state all --format json | jq '.[0].author.id'"
       - name: created-after
         description: "Show PRs created after this date (YYYY-MM-DD, relative like 30d/2w/1m (m=month), or epoch ms)"
       - name: created-before
@@ -521,19 +535,19 @@ commands:
   - command: create pr
     verb: create
     noun: pr
-    short: "Create a pull request: harness create pr <repo_id> --set title=... source_branch=... target_branch=..."
+    short: "Create a pull request: harness create pr <repo_id> --set title=... source_branch=... [target_branch=main] [description=...] [-f desc.md]"
     handler_type: endpoint
-    requires_parentid: true
-    parentid_label: "<repo_id>"
     flags_builtin:
       set: true
+    flags:
+      - name: file
+        short: f
+        description: "File containing the PR description (use - for stdin)"
     endpoint:
       method: POST
-      path: /code/api/v1/repos/{{ctx.parentId}}/pullreq
-      create_strategy: set-fields
-      create_body_init:
-        target_branch: '"main"'
-      create_body_wrap: ""
+      path: /code/api/v1/repos/{{ctx.id}}/pullreq
+      body_fn: create_pr_body
+      no_fields: true
       text_header: "\nCreated PR #{{it.number}}: {{it.title}}\n"
       text_footer: "{{url(it)}}\n"
 
@@ -651,13 +665,11 @@ commands:
     noun: branch
     short: "Create a branch: harness create branch <repo_id> --set name=<branch> target=<sha_or_branch>"
     handler_type: endpoint
-    requires_parentid: true
-    parentid_label: "<repo_id>"
     flags_builtin:
       set: true
     endpoint:
       method: POST
-      path: /code/api/v1/repos/{{ctx.parentId}}/branches
+      path: /code/api/v1/repos/{{ctx.id}}/branches
       create_strategy: set-fields
       create_body_wrap: ""
       text_header: "\nCreated branch {{it.name}}\n"
@@ -757,13 +769,11 @@ commands:
     noun: tag
     short: "Create a tag: harness create tag <repo_id> --set name=<tag> target=<sha>"
     handler_type: endpoint
-    requires_parentid: true
-    parentid_label: "<repo_id>"
     flags_builtin:
       set: true
     endpoint:
       method: POST
-      path: /code/api/v1/repos/{{ctx.parentId}}/tags
+      path: /code/api/v1/repos/{{ctx.id}}/tags
       create_strategy: set-fields
       create_body_wrap: ""
       text_header: "\nCreated tag {{it.name}}\n"
