@@ -476,6 +476,117 @@ func (r *Registry) unknownNounError(verb, noun string) error {
 	return errors.New(msg)
 }
 
+// SuggestRootCommand inspects raw CLI args and returns a user-friendly error message
+// when the user likely made one of two mistakes:
+//
+//  1. Noun-verb transposition: "harness pr create" instead of "harness create pr".
+//     Detected deterministically — args[0] must be a known noun (or alias), args[1]
+//     a known verb, and the combination must exist in the registry.
+//
+//  2. Verb typo: "harness creaet pipeline" — args[0] looks like a mistyped verb
+//     (Levenshtein ≤ 2 from a known verb that has registered commands).
+//
+// Returns "" when neither case applies so the caller can fall through to the
+// original error.
+func (r *Registry) SuggestRootCommand(args []string) string {
+	if len(args) == 0 {
+		return ""
+	}
+
+	// Strip leading flags (e.g. --profile, --debug) to find the first positional arg.
+	positional := make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if strings.HasPrefix(a, "-") {
+			// Skip the value of flags that take an argument.
+			if !strings.Contains(a, "=") {
+				i++
+			}
+			continue
+		}
+		positional = append(positional, a)
+	}
+	if len(positional) == 0 {
+		return ""
+	}
+
+	first := positional[0]
+
+	// Case 1: noun-verb transposition — requires at least two positional args.
+	// Handles plain nouns ("pr create"), noun aliases ("prs list"),
+	// noun:variant ("pipeline:summary get"), and verb:variant ("pr list:mine").
+	if len(positional) >= 2 {
+		maybeNoun := first
+		maybeVerb := positional[1]
+
+		// Strip :variant suffix from both positions before registry lookups.
+		nounBase := strings.SplitN(maybeNoun, ":", 2)[0]
+		verbBase := strings.SplitN(maybeVerb, ":", 2)[0]
+
+		resolvedNoun := nounBase
+		if canonical, ok := r.nounAliases[nounBase]; ok {
+			resolvedNoun = canonical
+		}
+		// Reconstruct the full noun with variant for the suggestion (e.g. "pipeline:summary").
+		fullNoun := resolvedNoun
+		if idx := strings.Index(maybeNoun, ":"); idx >= 0 {
+			fullNoun = resolvedNoun + maybeNoun[idx:]
+		}
+
+		_, nounKnown := r.nouns[resolvedNoun]
+		_, verbKnown := verbRegistry[verbBase]
+		if nounKnown && verbKnown {
+			// Check plain noun first (e.g. "harness create pr").
+			// If verb had a variant (e.g. "list:mine"), also check noun+verbVariant
+			// (e.g. "harness list pr:mine" when user typed "harness pr list:mine").
+			verbVariant := ""
+			if idx := strings.Index(maybeVerb, ":"); idx >= 0 {
+				verbVariant = maybeVerb[idx+1:]
+			}
+			lookupNoun := fullNoun
+			if verbVariant != "" {
+				lookupNoun = resolvedNoun + ":" + verbVariant
+			}
+			if r.GetSpec(verbBase, lookupNoun) != nil {
+				// Reconstruct the corrected command: verb before noun.
+				// When verb had a variant (e.g. list:mine), move it to the noun (list pr:mine).
+				// When noun had a variant (e.g. pipeline:summary), preserve it on the noun.
+				suggestedNoun := fullNoun
+				if verbVariant != "" {
+					suggestedNoun = resolvedNoun + ":" + verbVariant
+				}
+				corrected := append([]string{"harness", verbBase, suggestedNoun}, positional[2:]...)
+				return fmt.Sprintf("unknown command %q\n\nDid you mean?\n  %s", first, strings.Join(corrected, " "))
+			}
+		}
+	}
+
+	// Case 2: verb typo — first arg looks like a mistyped verb.
+	bestDist := map[string]int{}
+	for verb := range r.specs {
+		d := strutil.Levenshtein(first, verb)
+		if d <= 2 && d > 0 {
+			bestDist[verb] = d
+		}
+	}
+	if len(bestDist) > 0 {
+		suggestions := make([]string, 0, len(bestDist))
+		for v := range bestDist {
+			suggestions = append(suggestions, v)
+		}
+		sort.Slice(suggestions, func(i, j int) bool {
+			di, dj := bestDist[suggestions[i]], bestDist[suggestions[j]]
+			if di != dj {
+				return di < dj
+			}
+			return suggestions[i] < suggestions[j]
+		})
+		return fmt.Sprintf("unknown command %q\n\nDid you mean?\n  harness %s", first, strings.Join(suggestions, "\n  harness "))
+	}
+
+	return ""
+}
+
 func addSetupFn(cmd *cobra.Command, vs VerbSpec, setup func(*cobra.Command, []string) error) {
 	if vs.SkipSetup {
 		return

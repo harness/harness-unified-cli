@@ -239,6 +239,7 @@ All `list` commands support paging (`--limit`, `--offset`, `--all`, `--count`) b
 | ------------ | ---- | --- | ------ | ------ | ------ | ------- |
 | `repository` | ✓    | ✓   | S      | GTP    | ✓      |         |
 | `pr`         | ✓    | ✓   | S      | GTP    |        |         |
+| `pr:mine`    | ✓    |     |        |        |        |         |
 | `pr:merge`   |      |     |        |        |        | ✓       |
 | `pr:close`   |      |     |        |        |        | ✓       |
 | `branch`     | ✓    | ✓   | S      |        | ✓      |         |
@@ -277,13 +278,16 @@ All `list` commands support paging (`--limit`, `--offset`, `--all`, `--count`) b
 
 #### Knowledge Graph
 
-| Noun           | list | get | execute |
-| -------------- | ---- | --- | ------- |
-| `kg`           | ✓    | ✓   |         |
-| `hql:run`      |      |     | ✓       |
-| `hql:validate` |      |     | ✓       |
-| `hql:explain`  |      |     | ✓       |
-| `hql:grammar`  |      |     | ✓       |
+| Noun                | list | get | execute |
+| ------------------- | ---- | --- | ------- |
+| `kg:type`           | ✓    | ✓   |         |
+| `kg:queryable_type` | ✓    |     |         |
+| `kg:related_type`   | ✓    |     |         |
+| `kg:connection`     | ✓    |     |         |
+| `hql:run`           |      |     | ✓       |
+| `hql:validate`      |      |     | ✓       |
+| `hql:explain`       |      |     | ✓       |
+| `hql:grammar`       |      |     | ✓       |
 
 ---
 

@@ -171,7 +171,11 @@ func SetupAndExecuteRootCmd(root *cobra.Command, reg *registry.Registry) {
 	}
 
 	if err := root.Execute(); err != nil {
-		console.PrintError(err.Error())
+		if suggestion := reg.SuggestRootCommand(os.Args[1:]); suggestion != "" {
+			console.PrintError(suggestion)
+		} else {
+			console.PrintError(err.Error())
+		}
 		if cmdctx.IsTimeout(err) {
 			os.Exit(hbase.TimeoutExitCode)
 		}

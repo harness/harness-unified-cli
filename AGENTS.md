@@ -4,6 +4,58 @@
 
 A spec-driven Go CLI for Harness. Commands are declared in YAML spec files; the framework wires them into Cobra subcommands at startup. Agents rarely need to touch Go code — most work is adding or editing spec files.
 
+## Using the CLI
+
+**Grammar: `harness <verb> <noun> [id] [flags]`** — verb always comes first.
+
+```sh
+harness create pr
+harness list pipeline
+harness get pr <repo_id>/<pr_number>
+harness execute pr:merge <repo_id>/<pr_number>
+```
+
+### Discovery
+
+```sh
+harness get module <name>      # domain model and noun list for a module (e.g. "code", "pipeline")
+harness get noun <noun>        # fields and available verbs for a specific noun
+harness list noun --matrix     # all nouns × verbs at a glance
+harness <verb> <noun> --help   # flags for a specific command
+```
+
+### Common verbs
+
+| Verb | Purpose |
+|------|---------|
+| `list` | List resources (paginated) |
+| `get` | Get a single resource by id |
+| `create` | Create a resource |
+| `update` | Update a resource |
+| `delete` | Delete a resource |
+| `execute` | Run/trigger a resource (pipelines, merges, etc.) |
+
+### Qualified nouns (`noun:variant`)
+
+Some commands use a variant suffix to distinguish sub-operations on the same noun:
+
+```sh
+harness list pr:mine                        # PRs authored by you
+harness execute pr:merge <repo_id>/<pr_number>  # merge a PR
+harness execute pr:close <repo_id>/<pr_number>  # close a PR
+harness get pipeline:summary <pipeline_id>
+```
+
+### Scope flags
+
+Most commands accept `--org` and `--project` to override the profile defaults:
+
+```sh
+harness list pipeline --org my-org --project my-project
+```
+
+---
+
 ## Build & install
 
 ```sh
@@ -149,7 +201,7 @@ task build && cp $(go env GOPATH)/bin/harness ~/.local/bin/harness
 harness list kg:type
 harness get kg:type <id>
 harness list branch <repo_id>
-harness list pr_activity <repo_id> --pr <number>
+harness list pr_activity <repo_id>/<pr_number>
 ```
 
 The CLI reads auth from the active profile (typically `~/.harness/profiles.yaml`).
