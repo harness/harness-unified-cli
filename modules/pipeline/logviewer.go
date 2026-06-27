@@ -111,12 +111,14 @@ type logViewModel struct {
 	execLabel string // e.g. "sawka_test2 / 2QPmypuy..."
 	steps     []lvStep
 	// selectedKey is the logKey of the highlighted step; stable across polls.
-	selectedKey   string
-	logCache      map[string]string    // logKey → rendered log text
-	activeStreams  map[string]sseStream // logKey → live SSE stream (running steps only)
-	pipelineDone  bool
-	pollCountdown  int  // seconds remaining until next poll (counts down from lvPollIntervalSecs)
-	pollRefreshing bool // poll fetch currently in flight
+	selectedKey     string
+	logCache        map[string]string    // logKey → rendered log text
+	activeStreams   map[string]sseStream // logKey → live SSE stream (running steps only)
+	leftPanelW      int
+	leftPanelOffset int
+	pipelineDone    bool
+	pollCountdown   int  // seconds remaining until next poll (counts down from lvPollIntervalSecs)
+	pollRefreshing  bool // poll fetch currently in flight
 
 	spin    spinner.Model
 	vp      viewport.Model
@@ -131,6 +133,33 @@ type logViewModel struct {
 
 const leftPanelWidth = 32
 
+func (m *logViewModel) clampLeftOffset() {
+	maxOffset := m.leftPanelW - leftPanelWidth
+	if maxOffset < 0 {
+		maxOffset = 0
+	}
+	if m.leftPanelOffset > maxOffset {
+		m.leftPanelOffset = maxOffset
+	}
+	if m.leftPanelOffset < 0 {
+		m.leftPanelOffset = 0
+	}
+}
+
+func calcLeftPanelWidth(steps []lvStep, activeStreams map[string]sseStream) int {
+	w := 0
+	for _, s := range steps {
+		n := s.depth + 3 + len(s.name)
+		if _, streaming := activeStreams[s.logKey]; streaming {
+			n += 2
+		}
+		if n > w {
+			w = n
+		}
+	}
+	return w
+}
+
 func newLogViewModel(execLabel string, ctx *cmdctx.Ctx) logViewModel {
 	st := newLVStyles()
 	sp := spinner.New()
@@ -141,16 +170,16 @@ func newLogViewModel(execLabel string, ctx *cmdctx.Ctx) logViewModel {
 	vp.SoftWrap = true
 
 	return logViewModel{
-		st:           st,
-		state:        lvStateLoading,
-		execLabel:    execLabel,
-		logCache:     make(map[string]string),
+		st:            st,
+		state:         lvStateLoading,
+		execLabel:     execLabel,
+		logCache:      make(map[string]string),
 		activeStreams: make(map[string]sseStream),
-		spin:         sp,
-		vp:           vp,
-		ctx:          ctx,
-		width:        80,
-		height:       24,
+		spin:          sp,
+		vp:            vp,
+		ctx:           ctx,
+		width:         80,
+		height:        24,
 	}
 }
 
@@ -179,6 +208,7 @@ func (m logViewModel) loadSteps() tea.Cmd {
 				endTs:  e.EndTs,
 			})
 		}
+		normalizeDepths(steps)
 		return lvStepsLoadedMsg{steps: steps, pipelineStatus: pipelineStatus}
 	}
 }
@@ -198,6 +228,32 @@ func bareExecID(_ *auth.ResolvedAuth, label string) string {
 		return parts[1]
 	}
 	return label
+}
+
+// normalizeDepths remaps step depths so they start at 0 and have no gaps.
+// e.g. [2, 4, 4, 6] → [0, 1, 1, 2]
+func normalizeDepths(steps []lvStep) {
+	seen := make(map[int]struct{})
+	for _, s := range steps {
+		seen[s.depth] = struct{}{}
+	}
+	sorted := make([]int, 0, len(seen))
+	for d := range seen {
+		sorted = append(sorted, d)
+	}
+	// sort ascending
+	for i := 1; i < len(sorted); i++ {
+		for j := i; j > 0 && sorted[j] < sorted[j-1]; j-- {
+			sorted[j], sorted[j-1] = sorted[j-1], sorted[j]
+		}
+	}
+	rank := make(map[int]int, len(sorted))
+	for i, d := range sorted {
+		rank[d] = i
+	}
+	for i := range steps {
+		steps[i].depth = rank[steps[i].depth]
+	}
 }
 
 // keyDepth returns a visual depth for a log key based on segment count beyond the base 3 (pipeline/run/-execId).
@@ -270,6 +326,18 @@ func (m logViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 			return m, nil
+		case "left", "h":
+			if m.state == lvStateReady {
+				m.leftPanelOffset--
+				m.clampLeftOffset()
+			}
+			return m, nil
+		case "right", "l":
+			if m.state == lvStateReady {
+				m.leftPanelOffset++
+				m.clampLeftOffset()
+			}
+			return m, nil
 		}
 		// forward all other keys to viewport for scroll (pgup/pgdn etc.)
 		if m.state == lvStateReady {
@@ -300,6 +368,8 @@ func (m logViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		m.pipelineDone = logstream.IsTerminalStatus(msg.pipelineStatus)
+		m.leftPanelW = calcLeftPanelWidth(m.steps, m.activeStreams)
+		m.clampLeftOffset()
 		m.state = lvStateReady
 
 		// Set initial selection to first loggable step.
@@ -538,6 +608,45 @@ func (m logViewModel) View() tea.View {
 	return v
 }
 
+const lvGlyphSentinel = "\x01"
+const lvSpinSentinel = "\x02"
+
+func (m logViewModel) renderLeftPanelRow(s lvStep, selected bool, leftW int) string {
+	st := m.st
+	ss := format.BucketStyles[format.ClassifyExecutionStatus(s.status)]
+	_, streaming := m.activeStreams[s.logKey]
+
+	// Build plain sentinel string, apply scroll offset, truncate, then append spinner if needed.
+	indent := strings.Repeat(" ", s.depth)
+	plain := indent + lvGlyphSentinel + " " + s.name
+	if m.leftPanelOffset > 0 && m.leftPanelOffset < len(plain) {
+		plain = plain[m.leftPanelOffset:]
+	} else if m.leftPanelOffset >= len(plain) {
+		plain = ""
+	}
+	truncW := leftW - 1
+	if streaming {
+		truncW = leftW - 3
+	}
+	if len(plain) > truncW {
+		plain = plain[:truncW]
+	}
+	if streaming {
+		plain += lvSpinSentinel
+	}
+
+	spinView := m.spin.View()
+	if selected {
+		line := strings.ReplaceAll(plain, lvGlyphSentinel, ss.NodeGlyph)
+		line = strings.ReplaceAll(line, lvSpinSentinel, spinView)
+		return st.selected.Width(leftW).Render(line)
+	}
+	coloredGlyph := lipgloss.NewStyle().Foreground(lipgloss.Color(ss.LipglossColor)).Render(ss.NodeGlyph)
+	line := strings.ReplaceAll(plain, lvGlyphSentinel, coloredGlyph)
+	line = strings.ReplaceAll(line, lvSpinSentinel, st.dim.Render(spinView))
+	return st.normal.Width(leftW).Render(line)
+}
+
 func (m logViewModel) renderSplit(b *strings.Builder) {
 	st := m.st
 	headerH := 3 // title line + blank line + help/hint line at bottom
@@ -552,32 +661,7 @@ func (m logViewModel) renderSplit(b *strings.Builder) {
 	// build left panel lines
 	leftLines := make([]string, 0, len(m.steps))
 	for i, s := range m.steps {
-		indent := strings.Repeat("  ", s.depth)
-		maxName := leftW - len(indent) - 2 // 2 = glyph + space
-		name := s.name
-		if len(name) > maxName {
-			name = name[:maxName]
-		}
-		ss := format.BucketStyles[format.ClassifyExecutionStatus(s.status)]
-		_, streaming := m.activeStreams[s.logKey]
-		var line string
-		if i == selectedIdx {
-			spinSuffix := ""
-			if streaming {
-				spinSuffix = " " + m.spin.View()
-			}
-			content := indent + ss.NodeGlyph + " " + name + spinSuffix
-			line = st.selected.Width(leftW).Render(content)
-		} else {
-			icon := lipgloss.NewStyle().Foreground(lipgloss.Color(ss.LipglossColor)).Render(ss.NodeGlyph)
-			spinSuffix := ""
-			if streaming {
-				spinSuffix = " " + st.dim.Render(m.spin.View())
-			}
-			content := indent + icon + " " + name + spinSuffix
-			line = st.normal.Width(leftW).Render(content)
-		}
-		leftLines = append(leftLines, line)
+		leftLines = append(leftLines, m.renderLeftPanelRow(s, i == selectedIdx, leftW))
 	}
 
 	// scroll left panel so selected is visible

@@ -39,19 +39,21 @@ type StepDetails struct {
 }
 
 type GraphNode struct {
-	UUID             string         `json:"uuid"`
-	SetupID          string         `json:"setupId"`
-	Identifier       string         `json:"identifier"`
-	Name             string         `json:"name"`
-	BaseFQN          string         `json:"baseFqn"`
-	StepType         string         `json:"stepType"`
-	Status           string         `json:"status"`
-	LogBaseKey       string         `json:"logBaseKey"`
-	StartTs          int64          `json:"startTs"`
-	EndTs            int64          `json:"endTs"`
-	DelegateInfoList []DelegateInfo `json:"delegateInfoList"`
-	FailureInfo      FailureInfo    `json:"failureInfo"`
-	StepDetails      StepDetails    `json:"stepDetails"`
+	UUID             string          `json:"uuid"`
+	SetupID          string          `json:"setupId"`
+	Identifier       string          `json:"identifier"`
+	Name             string          `json:"name"`
+	BaseFQN          string          `json:"baseFqn"`
+	StepType         string          `json:"stepType"`
+	Status           string          `json:"status"`
+	LogBaseKey       string          `json:"logBaseKey"`
+	StartTs          int64           `json:"startTs"`
+	EndTs            int64           `json:"endTs"`
+	DelegateInfoList []DelegateInfo  `json:"delegateInfoList"`
+	FailureInfo      FailureInfo     `json:"failureInfo"`
+	StepDetails      StepDetails     `json:"stepDetails"`
+	StepParameters   json.RawMessage `json:"stepParameters"`
+	Outcomes         map[string]any  `json:"outcomes"`
 
 	Rank int // computed, not from JSON
 }

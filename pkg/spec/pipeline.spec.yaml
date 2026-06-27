@@ -274,6 +274,12 @@ nouns:
       - id: child_execution_id
         label: Child ExecId
         expr: it["child_execution_id"]
+      - id: inputs
+        expr: it["inputs"]
+        width_max: 60
+      - id: outputs
+        expr: it["outputs"]
+        width_max: 60
 
   - noun: runtime_input_template
     short_desc: The set of runtime input placeholders (<+input>) that a pipeline requires at execution time.

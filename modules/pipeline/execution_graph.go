@@ -4,6 +4,7 @@
 package pipeline
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"strings"
@@ -141,6 +142,16 @@ func listExecutionStepsFetchFn(ctx *cmdctx.Ctx, _ *spec.EndpointSpec, _, _ int, 
 			if len(node.DelegateInfoList) > 0 {
 				delegate = node.DelegateInfoList[0].Name
 			}
+			inputs := ""
+			if len(node.StepParameters) > 0 {
+				inputs = string(node.StepParameters)
+			}
+			outputs := ""
+			if len(node.Outcomes) > 0 {
+				if b, err := json.Marshal(node.Outcomes); err == nil {
+					outputs = string(b)
+				}
+			}
 			rows = append(rows, map[string]any{
 				"name":               name,
 				"type":               node.StepType,
@@ -154,6 +165,8 @@ func listExecutionStepsFetchFn(ctx *cmdctx.Ctx, _ *spec.EndpointSpec, _, _ int, 
 				"uuid":               node.UUID,
 				"started":            node.StartTs,
 				"child_execution_id": node.StepDetails.ChildPipelineExecutionDetails.PlanExecutionID,
+				"inputs":             inputs,
+				"outputs":            outputs,
 			})
 			nextDepth = depth + 1
 		}
