@@ -4,7 +4,6 @@
 package pipeline
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"strings"
@@ -130,33 +129,12 @@ func listExecutionStepsFetchFn(ctx *cmdctx.Ctx, _ *spec.EndpointSpec, _, _ int, 
 		if len(node.DelegateInfoList) > 0 {
 			delegate = node.DelegateInfoList[0].Name
 		}
-		inputs := ""
-		if len(node.StepParameters) > 0 {
-			inputs = string(node.StepParameters)
-		}
-		outputs := ""
-		if len(node.Outcomes) > 0 {
-			if b, err := json.Marshal(node.Outcomes); err == nil {
-				outputs = string(b)
-			}
-		}
-		rows = append(rows, map[string]any{
-			"name":                 indent + execgraph.NodeName(node),
-			"type":                 node.StepType,
-			"status":               node.Status,
-			"duration":             fmtNodeDuration(node.StartTs, node.EndTs),
-			"delegate":             delegate,
-			"error":                node.FailureInfo.Message,
-			"identifier":           node.Identifier,
-			"fqn":                  node.BaseFQN,
-			"log_key":              execgraph.GetLogKey(node),
-			"uuid":                 node.UUID,
-			"started":              node.StartTs,
-			"child_execution_id":   node.StepDetails.ChildPipelineExecutionDetails.PlanExecutionID,
-			"inputs":               inputs,
-			"outputs":              outputs,
-			"executable_responses": node.ExecutableResponses,
-		})
+		m := node.ToMap()
+		m["name"] = indent + execgraph.NodeName(node)
+		m["duration"] = fmtNodeDuration(node.StartTs, node.EndTs)
+		m["delegate"] = delegate
+		m["log_key"] = execgraph.GetLogKey(node)
+		rows = append(rows, m)
 	}
 
 	return &cmdctx.PageResult{

@@ -38,15 +38,92 @@ type StepDetails struct {
 	ChildPipelineExecutionDetails ChildPipelineExecutionDetails `json:"childPipelineExecutionDetails"`
 }
 
-type ExecutableTask struct {
+type TaskExecutableResponse struct {
+	TaskID       string   `json:"taskId"`
+	TaskName     string   `json:"taskName"`
+	TaskCategory string   `json:"taskCategory"`
+	LogKeys      []string `json:"logKeys"`
+	Units        []string `json:"units"`
+}
+
+type TaskChainExecutableResponse struct {
+	TaskID       string   `json:"taskId"`
+	TaskName     string   `json:"taskName"`
+	TaskCategory string   `json:"taskCategory"`
+	ChainEnd     bool     `json:"chainEnd"`
+	LogKeys      []string `json:"logKeys"`
+	Units        []string `json:"units"`
+}
+
+type AsyncExecutableResponse struct {
+	CallbackIDs                           []string `json:"callbackIds"`
+	LogKeys                               []string `json:"logKeys"`
+	Units                                 []string `json:"units"`
+	Status                                string   `json:"status"`
+	Timeout                               int64    `json:"timeout,string"`
+	ShouldRemoveAlreadyProcessedNotifyIDs bool     `json:"shouldRemoveAlreadyProcessedNotifyIds"`
+}
+
+type AsyncChainExecutableResponse struct {
+	CallbackID  string   `json:"callbackId"`
+	CallbackIDs []string `json:"callbackIds"`
+	ChainEnd    bool     `json:"chainEnd"`
+	LogKeys     []string `json:"logKeys"`
+	Units       []string `json:"units"`
+	Status      string   `json:"status"`
+	Timeout     int64    `json:"timeout,string"`
+}
+
+type SyncExecutableResponse struct {
 	LogKeys []string `json:"logKeys"`
+	Units   []string `json:"units"`
+}
+
+type ChildExecutableResponse struct {
+	ChildNodeID string   `json:"childNodeId"`
+	Skip        bool     `json:"skip"`
+	LogKeys     []string `json:"logKeys"`
+	Units       []string `json:"units"`
+}
+
+type ChildrenExecutableResponse struct {
+	MaxConcurrency        int64    `json:"maxConcurrency,string"`
+	ShouldProceedIfFailed bool     `json:"shouldProceedIfFailed"`
+	LogKeys               []string `json:"logKeys"`
+	Units                 []string `json:"units"`
+}
+
+type ChildChainExecutableResponse struct {
+	NextChildID     string `json:"nextChildId"`
+	PreviousChildID string `json:"previousChildId"`
+	LastLink        bool   `json:"lastLink"`
+	Suspend         bool   `json:"suspend"`
+}
+
+type SkipTaskExecutableResponse struct {
+	Message string `json:"message"`
+}
+
+type FacilitatorExecutableResponse struct {
+	Type             string   `json:"type"`
+	Status           string   `json:"status"`
+	StartTs          int64    `json:"startTs"`
+	CallbackIDs      []string `json:"callbackIds"`
+	TimeoutInSeconds int64    `json:"timeoutInSeconds"`
 }
 
 type ExecutableResponse struct {
-	Task      *ExecutableTask `json:"task"`
-	TaskChain *ExecutableTask `json:"taskChain"`
-	Async     *ExecutableTask `json:"async"`
-	SyncTask  *ExecutableTask `json:"syncTask"`
+	ResponseCase string                         `json:"responseCase"`
+	Task         *TaskExecutableResponse        `json:"task"`
+	TaskChain    *TaskChainExecutableResponse   `json:"taskChain"`
+	Async        *AsyncExecutableResponse       `json:"async"`
+	Sync         *SyncExecutableResponse        `json:"sync"`
+	Child        *ChildExecutableResponse       `json:"child"`
+	Children     *ChildrenExecutableResponse    `json:"children"`
+	ChildChain   *ChildChainExecutableResponse  `json:"childChain"`
+	AsyncChain   *AsyncChainExecutableResponse  `json:"asyncChain"`
+	SkipTask     *SkipTaskExecutableResponse    `json:"skipTask"`
+	Facilitator  *FacilitatorExecutableResponse `json:"facilitator"`
 }
 
 type GraphNode struct {
@@ -67,8 +144,31 @@ type GraphNode struct {
 	Outcomes            map[string]any       `json:"outcomes"`
 	ExecutableResponses []ExecutableResponse `json:"executableResponses"`
 
-	Rank  int // computed, not from JSON
-	Depth int // computed, not from JSON
+	Raw   json.RawMessage `json:"-"` // full wire JSON, populated by FetchExecutionGraph
+	Rank  int             // computed, not from JSON
+	Depth int             // computed, not from JSON
+}
+
+// UnmarshalJSON captures the raw bytes for full-fidelity JSON output, then
+// decodes the typed fields the CLI actually needs.
+func (n *GraphNode) UnmarshalJSON(data []byte) error {
+	n.Raw = json.RawMessage(data)
+	type plain GraphNode // avoids infinite recursion
+	return json.Unmarshal(data, (*plain)(n))
+}
+
+// ToMap returns the full wire JSON of the node as a map, suitable for output
+// rendering. Computed fields (Rank, Depth) are included. Callers may patch
+// additional enrichments on top.
+func (n GraphNode) ToMap() map[string]any {
+	var m map[string]any
+	json.Unmarshal(n.Raw, &m) //nolint
+	if m == nil {
+		m = make(map[string]any)
+	}
+	m["rank"] = n.Rank
+	m["depth"] = n.Depth
+	return m
 }
 
 // HasLogs reports whether the node has any log content to fetch.
@@ -80,14 +180,49 @@ func HasLogs(node GraphNode) bool {
 // a node. Steps like ShellScript and Http store their logs at a sub-key
 // embedded in executableResponses rather than at logBaseKey directly.
 func GetLogKey(node GraphNode) string {
+	keys := GetAllLogKeys(node)
+	if len(keys) > 0 {
+		return keys[0]
+	}
+	return node.LogBaseKey
+}
+
+// GetAllLogKeys returns all log keys from a node's executableResponses.
+func GetAllLogKeys(node GraphNode) []string {
+	var keys []string
 	for _, er := range node.ExecutableResponses {
-		for _, task := range []*ExecutableTask{er.Task, er.TaskChain, er.Async, er.SyncTask} {
-			if task != nil && len(task.LogKeys) > 0 {
-				return task.LogKeys[0]
+		for _, lk := range erLogKeys(er) {
+			if lk != "" {
+				keys = append(keys, lk)
 			}
 		}
 	}
-	return node.LogBaseKey
+	return keys
+}
+
+func erLogKeys(er ExecutableResponse) []string {
+	if er.Task != nil {
+		return er.Task.LogKeys
+	}
+	if er.TaskChain != nil {
+		return er.TaskChain.LogKeys
+	}
+	if er.Async != nil {
+		return er.Async.LogKeys
+	}
+	if er.AsyncChain != nil {
+		return er.AsyncChain.LogKeys
+	}
+	if er.Sync != nil {
+		return er.Sync.LogKeys
+	}
+	if er.Child != nil {
+		return er.Child.LogKeys
+	}
+	if er.Children != nil {
+		return er.Children.LogKeys
+	}
+	return nil
 }
 
 type AdjacencyEntry struct {
