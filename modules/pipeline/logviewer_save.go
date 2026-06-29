@@ -16,7 +16,12 @@ import (
 // doSaveLog writes the current step's log to m.saveInput.
 // append=true opens the file in append mode; false truncates/creates.
 func (m *logViewModel) doSaveLog(appendMode bool) {
-	content := console.StripANSI(m.logCache[m.selectedKey])
+	node := m.selectedNode()
+	logKey := ""
+	if node != nil {
+		logKey = node.LogBaseKey
+	}
+	content := console.StripANSI(m.logCache[logKey])
 	flag := os.O_WRONLY | os.O_CREATE
 	if appendMode {
 		flag |= os.O_APPEND

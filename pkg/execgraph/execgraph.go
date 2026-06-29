@@ -55,7 +55,8 @@ type GraphNode struct {
 	StepParameters   json.RawMessage `json:"stepParameters"`
 	Outcomes         map[string]any  `json:"outcomes"`
 
-	Rank int // computed, not from JSON
+	Rank  int // computed, not from JSON
+	Depth int // computed, not from JSON
 }
 
 type AdjacencyEntry struct {
@@ -143,6 +144,39 @@ func FetchExecutionGraph(ctx *cmdctx.Ctx, execId string) (ExecutionGraph, error)
 		return ExecutionGraph{}, fmt.Errorf("decoding execution graph: %w", err)
 	}
 	return envelope.Data.ExecutionGraph, nil
+}
+
+// WalkNodes traverses the execution graph in display order and returns a flat slice of
+// GraphNode values with Depth set. Nodes whose StepType is in skipTypes are not included
+// in the output but their children are still walked at the same depth.
+func WalkNodes(g ExecutionGraph, skipTypes map[string]bool) []GraphNode {
+	visited := make(map[string]bool)
+	var result []GraphNode
+	var walk func(id string, depth int)
+	walk = func(id string, depth int) {
+		if visited[id] {
+			return
+		}
+		visited[id] = true
+		node := g.NodeMap[id]
+		adj := g.NodeAdjacencyListMap[id]
+		nextDepth := depth
+		if !skipTypes[node.StepType] {
+			node.Depth = depth
+			result = append(result, node)
+			nextDepth = depth + 1
+		}
+		for _, child := range adj.Children {
+			walk(child, nextDepth)
+		}
+		for _, next := range adj.NextIDs {
+			walk(next, depth)
+		}
+	}
+	if g.RootNodeID != "" {
+		walk(g.RootNodeID, 0)
+	}
+	return result
 }
 
 // FetchExecutionFull fetches the execution graph and pipeline-level status in one call.

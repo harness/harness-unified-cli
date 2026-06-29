@@ -12,6 +12,7 @@ import (
 
 	"charm.land/lipgloss/v2"
 
+	"github.com/harness/harness-cli/pkg/execgraph"
 	"github.com/harness/harness-cli/pkg/tui"
 )
 
@@ -96,9 +97,9 @@ func (m logViewModel) renderTabOutputs() string {
 	return m.vp.View()
 }
 
-func (m *logViewModel) renderDetailsContent(step *lvStep) string {
+func (m *logViewModel) renderDetailsContent(node *execgraph.GraphNode) string {
 	st := m.st
-	if step == nil {
+	if node == nil {
 		return st.dim.Render("(no step selected)")
 	}
 
@@ -116,21 +117,21 @@ func (m *logViewModel) renderDetailsContent(step *lvStep) string {
 	}
 
 	var b strings.Builder
-	b.WriteString(label("Started at:") + "  " + fmtTs(step.startTs) + "\n")
-	b.WriteString(label("Ended at:  ") + "  " + fmtTs(step.endTs) + "\n")
+	b.WriteString(label("Started at:") + "  " + fmtTs(node.StartTs) + "\n")
+	b.WriteString(label("Ended at:  ") + "  " + fmtTs(node.EndTs) + "\n")
 
 	dur := dim("—")
-	if step.startTs > 0 && step.endTs > step.startTs {
-		d := time.Duration(step.endTs-step.startTs) * time.Millisecond
+	if node.StartTs > 0 && node.EndTs > node.StartTs {
+		d := time.Duration(node.EndTs-node.StartTs) * time.Millisecond
 		dur = val(d.Round(time.Second).String())
 	}
 	b.WriteString(label("Duration:  ") + "  " + dur + "\n")
 
 	// Parse timeout from stepParameters JSON.
 	timeout := dim("—")
-	if step.inputs != "" {
+	if len(node.StepParameters) > 0 {
 		var params map[string]any
-		if err := json.Unmarshal([]byte(step.inputs), &params); err == nil {
+		if err := json.Unmarshal(node.StepParameters, &params); err == nil {
 			if t, ok := params["timeout"]; ok {
 				timeout = val(fmt.Sprintf("%v", t))
 			}
@@ -138,10 +139,12 @@ func (m *logViewModel) renderDetailsContent(step *lvStep) string {
 	}
 	b.WriteString(label("Timeout:   ") + "  " + timeout + "\n")
 
-	if len(step.delegates) > 0 {
+	if len(node.DelegateInfoList) > 0 {
 		b.WriteString("\n" + label("Delegates:") + "\n")
-		for _, d := range step.delegates {
-			b.WriteString("  " + val(d) + "\n")
+		for _, d := range node.DelegateInfoList {
+			if d.Name != "" {
+				b.WriteString("  " + val(d.Name) + "\n")
+			}
 		}
 	}
 
@@ -163,28 +166,24 @@ func (m *logViewModel) syncViewportForTab() {
 		return
 	}
 	st := m.st
-	var step *lvStep
-	for i := range m.steps {
-		if m.steps[i].logKey == m.selectedKey {
-			step = &m.steps[i]
-			break
-		}
-	}
+	node := m.selectedNode()
 
 	switch m.activeTab {
 	case tabDetails:
-		m.vp.SetContent(m.renderDetailsContent(step))
+		m.vp.SetContent(m.renderDetailsContent(node))
 	case tabInputs:
-		if step == nil || step.inputs == "" {
+		if node == nil || len(node.StepParameters) == 0 {
 			m.vp.SetContent(st.dim.Render("(no inputs)"))
 		} else {
-			m.vp.SetContent(prettyJSON(step.inputs, st))
+			m.vp.SetContent(prettyJSON(string(node.StepParameters), st))
 		}
 	case tabOutputs:
-		if step == nil || step.outputs == "" {
+		if node == nil || len(node.Outcomes) == 0 {
 			m.vp.SetContent(st.dim.Render("(no outputs)"))
 		} else {
-			m.vp.SetContent(prettyJSON(step.outputs, st))
+			if b, err := json.Marshal(node.Outcomes); err == nil {
+				m.vp.SetContent(prettyJSON(string(b), st))
+			}
 		}
 	}
 	m.vp.GotoTop()

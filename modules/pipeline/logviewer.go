@@ -16,8 +16,8 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
-	"github.com/harness/harness-cli/pkg/auth"
 	"github.com/harness/harness-cli/pkg/cmdctx"
+	"github.com/harness/harness-cli/pkg/execgraph"
 	"github.com/harness/harness-cli/pkg/format"
 	"github.com/harness/harness-cli/pkg/logstream"
 	"github.com/harness/harness-cli/pkg/tui"
@@ -28,7 +28,7 @@ const lvPollIntervalSecs = 2
 // --- messages ---
 
 type lvStepsLoadedMsg struct {
-	steps          []lvStep
+	steps          []execgraph.GraphNode
 	pipelineStatus string
 	err            error
 }
@@ -49,20 +49,6 @@ type lvLogStreamLineMsg struct {
 
 type lvLogStreamDoneMsg struct {
 	logKey string
-}
-
-// --- step item ---
-
-type lvStep struct {
-	depth     int
-	name      string
-	status    string
-	logKey    string // empty for non-loggable nodes (STRATEGY etc.)
-	startTs   int64
-	endTs     int64
-	delegates []string
-	inputs    string // raw JSON from stepParameters
-	outputs   string // raw JSON from outcomes
 }
 
 // --- styles ---
@@ -114,9 +100,9 @@ type logViewModel struct {
 	errMsg string
 
 	execLabel string // e.g. "sawka_test2 / 2QPmypuy..."
-	steps     []lvStep
-	// selectedKey is the logKey of the highlighted step; stable across polls.
-	selectedKey     string
+	steps     []execgraph.GraphNode
+	// selectedUUID is the UUID of the highlighted step; stable across polls.
+	selectedUUID    string
 	logCache        map[string]string    // logKey → rendered log text
 	activeStreams   map[string]sseStream // logKey → live SSE stream (running steps only)
 	leftPanelW      int
@@ -159,11 +145,11 @@ func (m *logViewModel) clampLeftOffset() {
 	}
 }
 
-func calcLeftPanelWidth(steps []lvStep, activeStreams map[string]sseStream) int {
+func calcLeftPanelWidth(steps []execgraph.GraphNode, activeStreams map[string]sseStream) int {
 	w := 0
 	for _, s := range steps {
-		n := s.depth + 3 + len(s.name)
-		if _, streaming := activeStreams[s.logKey]; streaming {
+		n := s.Depth + 3 + len(execgraph.NodeName(s))
+		if _, streaming := activeStreams[s.LogBaseKey]; streaming {
 			n += 2
 		}
 		if n > w {
@@ -205,28 +191,14 @@ func (m logViewModel) Init() tea.Cmd {
 
 func (m logViewModel) loadSteps() tea.Cmd {
 	ctx := m.ctx
-	execID := bareExecID(ctx.Auth, m.execLabel)
+	execID := bareExecID(m.execLabel)
 	return func() tea.Msg {
-		entries, pipelineStatus, err := logstream.FetchLogKeys(ctx, execID)
+		exec, err := execgraph.FetchExecutionFull(ctx, execID)
 		if err != nil {
 			return lvStepsLoadedMsg{err: err}
 		}
-		steps := make([]lvStep, 0, len(entries))
-		for _, e := range entries {
-			steps = append(steps, lvStep{
-				depth:     keyDepth(e.LogKey),
-				name:      e.Name,
-				status:    e.Status,
-				logKey:    e.LogKey,
-				startTs:   e.StartTs,
-				endTs:     e.EndTs,
-				delegates: e.Delegates,
-				inputs:    e.Inputs,
-				outputs:   e.Outputs,
-			})
-		}
-		normalizeDepths(steps)
-		return lvStepsLoadedMsg{steps: steps, pipelineStatus: pipelineStatus}
+		steps := execgraph.WalkNodes(exec.Graph, skipStepTypes)
+		return lvStepsLoadedMsg{steps: steps, pipelineStatus: exec.PipelineStatus}
 	}
 }
 
@@ -239,47 +211,12 @@ func countdownTick() tea.Cmd {
 }
 
 // bareExecID extracts the execution ID from the label "pipeline / execId" or just "execId".
-func bareExecID(_ *auth.ResolvedAuth, label string) string {
+func bareExecID(label string) string {
 	parts := strings.SplitN(label, " / ", 2)
 	if len(parts) == 2 {
 		return parts[1]
 	}
 	return label
-}
-
-// normalizeDepths remaps step depths so they start at 0 and have no gaps.
-// e.g. [2, 4, 4, 6] → [0, 1, 1, 2]
-func normalizeDepths(steps []lvStep) {
-	seen := make(map[int]struct{})
-	for _, s := range steps {
-		seen[s.depth] = struct{}{}
-	}
-	sorted := make([]int, 0, len(seen))
-	for d := range seen {
-		sorted = append(sorted, d)
-	}
-	// sort ascending
-	for i := 1; i < len(sorted); i++ {
-		for j := i; j > 0 && sorted[j] < sorted[j-1]; j-- {
-			sorted[j], sorted[j-1] = sorted[j-1], sorted[j]
-		}
-	}
-	rank := make(map[int]int, len(sorted))
-	for i, d := range sorted {
-		rank[d] = i
-	}
-	for i := range steps {
-		steps[i].depth = rank[steps[i].depth]
-	}
-}
-
-// keyDepth returns a visual depth for a log key based on segment count beyond the base 3 (pipeline/run/-execId).
-func keyDepth(logKey string) int {
-	parts := strings.Split(logKey, "/")
-	if len(parts) <= 4 {
-		return 0
-	}
-	return len(parts) - 4
 }
 
 func (m logViewModel) fetchLog(logKey string) tea.Cmd {
@@ -295,11 +232,21 @@ func (m logViewModel) fetchLog(logKey string) tea.Cmd {
 // selectedIndex returns the slice index of the currently selected step, or 0.
 func (m *logViewModel) selectedIndex() int {
 	for i, s := range m.steps {
-		if s.logKey == m.selectedKey {
+		if s.UUID == m.selectedUUID {
 			return i
 		}
 	}
 	return 0
+}
+
+// selectedNode returns a pointer to the currently selected node, or nil.
+func (m *logViewModel) selectedNode() *execgraph.GraphNode {
+	for i := range m.steps {
+		if m.steps[i].UUID == m.selectedUUID {
+			return &m.steps[i]
+		}
+	}
+	return nil
 }
 
 func (m logViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -394,18 +341,24 @@ func (m logViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, tea.Quit
 		case "s":
-			if m.state == lvStateReady && m.selectedKey != "" {
-				if _, ok := m.logCache[m.selectedKey]; ok {
-					m.saveModal = true
-					m.saveInput = ""
-					m.saveStatus = ""
-					m.saveDone = false
+			if m.state == lvStateReady && m.selectedUUID != "" {
+				node := m.selectedNode()
+				if node != nil {
+					if _, ok := m.logCache[node.LogBaseKey]; ok {
+						m.saveModal = true
+						m.saveInput = ""
+						m.saveStatus = ""
+						m.saveDone = false
+					}
 				}
 			}
 			return m, nil
 		case "r":
-			if m.state == lvStateReady && m.selectedKey != "" {
-				delete(m.logCache, m.selectedKey)
+			if m.state == lvStateReady && m.selectedUUID != "" {
+				node := m.selectedNode()
+				if node != nil {
+					delete(m.logCache, node.LogBaseKey)
+				}
 				return m, m.maybeLoadLog()
 			}
 			return m, nil
@@ -413,7 +366,7 @@ func (m logViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.state == lvStateReady {
 				idx := m.selectedIndex()
 				if idx > 0 {
-					m.selectedKey = m.steps[idx-1].logKey
+					m.selectedUUID = m.steps[idx-1].UUID
 					m.syncViewportForTab()
 					return m, m.maybeLoadLog()
 				}
@@ -423,7 +376,7 @@ func (m logViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.state == lvStateReady {
 				idx := m.selectedIndex()
 				if idx < len(m.steps)-1 {
-					m.selectedKey = m.steps[idx+1].logKey
+					m.selectedUUID = m.steps[idx+1].UUID
 					m.syncViewportForTab()
 					return m, m.maybeLoadLog()
 				}
@@ -468,14 +421,14 @@ func (m logViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		// Merge: update statuses and append new steps.
-		existing := make(map[string]int, len(m.steps)) // logKey → index in m.steps
+		existing := make(map[string]int, len(m.steps))
 		for i, s := range m.steps {
-			existing[s.logKey] = i
+			existing[s.UUID] = i
 		}
 		for _, s := range msg.steps {
-			if i, ok := existing[s.logKey]; ok {
-				m.steps[i].status = s.status
-				m.steps[i].endTs = s.endTs
+			if i, ok := existing[s.UUID]; ok {
+				m.steps[i].Status = s.Status
+				m.steps[i].EndTs = s.EndTs
 			} else {
 				m.steps = append(m.steps, s)
 			}
@@ -486,14 +439,9 @@ func (m logViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.clampLeftOffset()
 		m.state = lvStateReady
 
-		// Set initial selection to first loggable step.
-		if m.selectedKey == "" && len(m.steps) > 0 {
-			for _, s := range m.steps {
-				if s.logKey != "" {
-					m.selectedKey = s.logKey
-					break
-				}
-			}
+		// Set initial selection to first step.
+		if m.selectedUUID == "" && len(m.steps) > 0 {
+			m.selectedUUID = m.steps[0].UUID
 		}
 
 		m.pollRefreshing = false
@@ -532,7 +480,8 @@ func (m logViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case lvLogLoadedMsg:
 		m.loading = false
 		if msg.err != nil {
-			if msg.logKey == m.selectedKey {
+			node := m.selectedNode()
+			if node != nil && node.LogBaseKey == msg.logKey {
 				m.vp.SetContent(m.st.errStyle.Render("error: " + msg.err.Error()))
 				m.vp.GotoTop()
 			}
@@ -543,7 +492,8 @@ func (m logViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.logCache[msg.logKey] = msg.body
 		}
-		if msg.logKey == m.selectedKey {
+		node := m.selectedNode()
+		if node != nil && node.LogBaseKey == msg.logKey {
 			m.vp.SetContent(m.logCache[msg.logKey])
 			m.vp.GotoTop()
 		}
@@ -553,7 +503,8 @@ func (m logViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for _, line := range msg.lines {
 			m.logCache[msg.logKey] += line
 		}
-		if msg.logKey == m.selectedKey {
+		node := m.selectedNode()
+		if node != nil && node.LogBaseKey == msg.logKey {
 			atBottom := m.vp.AtBottom()
 			m.vp.SetContent(m.logCache[msg.logKey])
 			if atBottom {
@@ -573,19 +524,13 @@ func (m logViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// If cache is empty (SSE produced nothing), fall back to blob fetch.
 		if _, hasCached := m.logCache[msg.logKey]; !hasCached {
-			var step *lvStep
-			for i := range m.steps {
-				if m.steps[i].logKey == msg.logKey {
-					step = &m.steps[i]
-					break
-				}
-			}
-			if step != nil && msg.logKey == m.selectedKey {
+			node := m.selectedNode()
+			if node != nil && node.LogBaseKey == msg.logKey {
 				m.loading = true
 				m.vp.SetContent(m.st.dim.Render("loading…"))
 				return m, tea.Batch(
 					func() tea.Msg { return m.spin.Tick() },
-					m.fetchLog(step.logKey),
+					m.fetchLog(node.LogBaseKey),
 				)
 			}
 		}
@@ -603,7 +548,7 @@ func (m logViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *logViewModel) resizeComponents() {
-	headerH := 2 // title + blank + help
+	headerH := 2 // title line + blank line + help/hint line at bottom
 	leftW := leftPanelWidth
 	rightW := m.width - leftW - 1 // -1 for border
 	vpH := m.height - headerH - 2 // -2 for tab bar + divider
@@ -650,30 +595,24 @@ func (m *logViewModel) maybeLoadLog() tea.Cmd {
 	if m.activeTab != tabLogs {
 		return nil
 	}
-	if len(m.steps) == 0 || m.selectedKey == "" {
+	if len(m.steps) == 0 || m.selectedUUID == "" {
 		return nil
 	}
-	var step *lvStep
-	for i := range m.steps {
-		if m.steps[i].logKey == m.selectedKey {
-			step = &m.steps[i]
-			break
-		}
-	}
-	if step == nil {
+	node := m.selectedNode()
+	if node == nil {
 		return nil
 	}
-	if step.logKey == "" {
+	if node.LogBaseKey == "" {
 		m.vp.SetContent(m.st.dim.Render("(no logs for this step)"))
 		m.vp.GotoTop()
 		return nil
 	}
 
-	terminal := logstream.IsTerminalStatus(step.status)
+	terminal := logstream.IsTerminalStatus(node.Status)
 
 	if terminal {
 		// Blob path: show cache if present, otherwise fetch.
-		if body, ok := m.logCache[step.logKey]; ok {
+		if body, ok := m.logCache[node.LogBaseKey]; ok {
 			m.vp.SetContent(body)
 			m.vp.GotoTop()
 			return nil
@@ -682,25 +621,25 @@ func (m *logViewModel) maybeLoadLog() tea.Cmd {
 		m.vp.SetContent(m.st.dim.Render("loading…"))
 		return tea.Batch(
 			func() tea.Msg { return m.spin.Tick() },
-			m.fetchLog(step.logKey),
+			m.fetchLog(node.LogBaseKey),
 		)
 	}
 
 	// Running path: show current cache (may be empty) and ensure stream is live.
-	if body, ok := m.logCache[step.logKey]; ok {
+	if body, ok := m.logCache[node.LogBaseKey]; ok {
 		m.vp.SetContent(body)
 		m.vp.GotoBottom()
 	} else {
 		m.vp.SetContent(m.st.dim.Render("connecting…"))
 	}
 
-	if _, streaming := m.activeStreams[step.logKey]; streaming {
+	if _, streaming := m.activeStreams[node.LogBaseKey]; streaming {
 		// Stream already running in background — nothing to start.
 		return nil
 	}
 	return tea.Batch(
 		func() tea.Msg { return m.spin.Tick() },
-		m.startSSEStream(step.logKey),
+		m.startSSEStream(node.LogBaseKey),
 	)
 }
 
@@ -735,14 +674,14 @@ func (m logViewModel) View() tea.View {
 const lvGlyphSentinel = "\x01"
 const lvSpinSentinel = "\x02"
 
-func (m logViewModel) renderLeftPanelRow(s lvStep, selected bool, leftW int) string {
+func (m logViewModel) renderLeftPanelRow(s execgraph.GraphNode, selected bool, leftW int) string {
 	st := m.st
-	ss := format.BucketStyles[format.ClassifyExecutionStatus(s.status)]
-	_, streaming := m.activeStreams[s.logKey]
+	ss := format.BucketStyles[format.ClassifyExecutionStatus(s.Status)]
+	_, streaming := m.activeStreams[s.LogBaseKey]
 
 	// Build plain sentinel string, apply scroll offset, truncate, then append spinner if needed.
-	indent := strings.Repeat(" ", s.depth)
-	plain := indent + lvGlyphSentinel + " " + s.name
+	indent := strings.Repeat(" ", s.Depth)
+	plain := indent + lvGlyphSentinel + " " + execgraph.NodeName(s)
 	if m.leftPanelOffset > 0 && m.leftPanelOffset < len(plain) {
 		plain = plain[m.leftPanelOffset:]
 	} else if m.leftPanelOffset >= len(plain) {
@@ -842,7 +781,6 @@ func (m logViewModel) renderSplit(b *strings.Builder) {
 	rightHint := st.dim.Render(helpRight)
 	b.WriteString(leftHint + "  " + rightHint + "\n")
 }
-
 
 // RunLogViewer launches the full-screen log viewer TUI.
 // execLabel is shown in the header (e.g. "sawka_test2 / 2QPmypuy...").

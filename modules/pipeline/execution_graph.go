@@ -122,64 +122,40 @@ func listExecutionStepsFetchFn(ctx *cmdctx.Ctx, _ *spec.EndpointSpec, _, _ int, 
 
 	assignRanks(g.RootNodeID, 1, g.NodeMap, g.NodeAdjacencyListMap)
 
+	nodes := execgraph.WalkNodes(g, skipStepTypes)
 	var rows []any
-	visited := make(map[string]bool)
-	var walk func(id string, depth int)
-	walk = func(id string, depth int) {
-		if visited[id] {
-			return
+	for _, node := range nodes {
+		indent := strings.Repeat("  ", node.Depth)
+		delegate := ""
+		if len(node.DelegateInfoList) > 0 {
+			delegate = node.DelegateInfoList[0].Name
 		}
-		visited[id] = true
-		node := g.NodeMap[id]
-		adj := g.NodeAdjacencyListMap[id]
-
-		nextDepth := depth
-		if !skipStepTypes[node.StepType] {
-			indent := strings.Repeat("  ", depth)
-			status := node.Status
-			name := indent + execgraph.NodeName(node)
-			delegate := ""
-			if len(node.DelegateInfoList) > 0 {
-				delegate = node.DelegateInfoList[0].Name
+		inputs := ""
+		if len(node.StepParameters) > 0 {
+			inputs = string(node.StepParameters)
+		}
+		outputs := ""
+		if len(node.Outcomes) > 0 {
+			if b, err := json.Marshal(node.Outcomes); err == nil {
+				outputs = string(b)
 			}
-			inputs := ""
-			if len(node.StepParameters) > 0 {
-				inputs = string(node.StepParameters)
-			}
-			outputs := ""
-			if len(node.Outcomes) > 0 {
-				if b, err := json.Marshal(node.Outcomes); err == nil {
-					outputs = string(b)
-				}
-			}
-			rows = append(rows, map[string]any{
-				"name":               name,
-				"type":               node.StepType,
-				"status":             status,
-				"duration":           fmtNodeDuration(node.StartTs, node.EndTs),
-				"delegate":           delegate,
-				"error":              node.FailureInfo.Message,
-				"identifier":         node.Identifier,
-				"fqn":                node.BaseFQN,
-				"log_key":            node.LogBaseKey,
-				"uuid":               node.UUID,
-				"started":            node.StartTs,
-				"child_execution_id": node.StepDetails.ChildPipelineExecutionDetails.PlanExecutionID,
-				"inputs":             inputs,
-				"outputs":            outputs,
-			})
-			nextDepth = depth + 1
 		}
-
-		for _, child := range adj.Children {
-			walk(child, nextDepth)
-		}
-		for _, next := range adj.NextIDs {
-			walk(next, depth)
-		}
-	}
-	if g.RootNodeID != "" {
-		walk(g.RootNodeID, 0)
+		rows = append(rows, map[string]any{
+			"name":               indent + execgraph.NodeName(node),
+			"type":               node.StepType,
+			"status":             node.Status,
+			"duration":           fmtNodeDuration(node.StartTs, node.EndTs),
+			"delegate":           delegate,
+			"error":              node.FailureInfo.Message,
+			"identifier":         node.Identifier,
+			"fqn":                node.BaseFQN,
+			"log_key":            node.LogBaseKey,
+			"uuid":               node.UUID,
+			"started":            node.StartTs,
+			"child_execution_id": node.StepDetails.ChildPipelineExecutionDetails.PlanExecutionID,
+			"inputs":             inputs,
+			"outputs":            outputs,
+		})
 	}
 
 	return &cmdctx.PageResult{
