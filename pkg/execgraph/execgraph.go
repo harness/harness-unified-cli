@@ -38,25 +38,56 @@ type StepDetails struct {
 	ChildPipelineExecutionDetails ChildPipelineExecutionDetails `json:"childPipelineExecutionDetails"`
 }
 
+type ExecutableTask struct {
+	LogKeys []string `json:"logKeys"`
+}
+
+type ExecutableResponse struct {
+	Task      *ExecutableTask `json:"task"`
+	TaskChain *ExecutableTask `json:"taskChain"`
+	Async     *ExecutableTask `json:"async"`
+	SyncTask  *ExecutableTask `json:"syncTask"`
+}
+
 type GraphNode struct {
-	UUID             string          `json:"uuid"`
-	SetupID          string          `json:"setupId"`
-	Identifier       string          `json:"identifier"`
-	Name             string          `json:"name"`
-	BaseFQN          string          `json:"baseFqn"`
-	StepType         string          `json:"stepType"`
-	Status           string          `json:"status"`
-	LogBaseKey       string          `json:"logBaseKey"`
-	StartTs          int64           `json:"startTs"`
-	EndTs            int64           `json:"endTs"`
-	DelegateInfoList []DelegateInfo  `json:"delegateInfoList"`
-	FailureInfo      FailureInfo     `json:"failureInfo"`
-	StepDetails      StepDetails     `json:"stepDetails"`
-	StepParameters   json.RawMessage `json:"stepParameters"`
-	Outcomes         map[string]any  `json:"outcomes"`
+	UUID                string               `json:"uuid"`
+	SetupID             string               `json:"setupId"`
+	Identifier          string               `json:"identifier"`
+	Name                string               `json:"name"`
+	BaseFQN             string               `json:"baseFqn"`
+	StepType            string               `json:"stepType"`
+	Status              string               `json:"status"`
+	LogBaseKey          string               `json:"logBaseKey"`
+	StartTs             int64                `json:"startTs"`
+	EndTs               int64                `json:"endTs"`
+	DelegateInfoList    []DelegateInfo       `json:"delegateInfoList"`
+	FailureInfo         FailureInfo          `json:"failureInfo"`
+	StepDetails         StepDetails          `json:"stepDetails"`
+	StepParameters      json.RawMessage      `json:"stepParameters"`
+	Outcomes            map[string]any       `json:"outcomes"`
+	ExecutableResponses []ExecutableResponse `json:"executableResponses"`
 
 	Rank  int // computed, not from JSON
 	Depth int // computed, not from JSON
+}
+
+// HasLogs reports whether the node has any log content to fetch.
+func HasLogs(node GraphNode) bool {
+	return node.LogBaseKey != ""
+}
+
+// GetLogKey returns the correct log service key to use when fetching logs for
+// a node. Steps like ShellScript and Http store their logs at a sub-key
+// embedded in executableResponses rather than at logBaseKey directly.
+func GetLogKey(node GraphNode) string {
+	for _, er := range node.ExecutableResponses {
+		for _, task := range []*ExecutableTask{er.Task, er.TaskChain, er.Async, er.SyncTask} {
+			if task != nil && len(task.LogKeys) > 0 {
+				return task.LogKeys[0]
+			}
+		}
+	}
+	return node.LogBaseKey
 }
 
 type AdjacencyEntry struct {

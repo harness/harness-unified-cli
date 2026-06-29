@@ -215,10 +215,11 @@ func ShortLogKey(key string) string {
 // Matches against both the full raw logBaseKey and its short form (after pipeline/ prefix).
 func FindNodeForFollow(g execgraph.ExecutionGraph, logKey string) (execgraph.GraphNode, bool) {
 	for _, node := range g.NodeMap {
-		if node.LogBaseKey == "" {
+		if !execgraph.HasLogs(node) {
 			continue
 		}
-		if node.LogBaseKey == logKey || ShortLogKey(node.LogBaseKey) == logKey {
+		fk := execgraph.GetLogKey(node)
+		if fk == logKey || ShortLogKey(fk) == logKey {
 			return node, true
 		}
 	}
@@ -438,8 +439,8 @@ func FetchLogKeys(ctx *cmdctx.Ctx, execId string) ([]LogKeyEntry, string, error)
 		seenNode[id] = true
 		node := g.NodeMap[id]
 		name := execgraph.NodeName(node)
-		if node.LogBaseKey != "" {
-			lk := node.LogBaseKey
+		if execgraph.HasLogs(node) {
+			lk := execgraph.GetLogKey(node)
 			if !seenKey[lk] {
 				seenKey[lk] = true
 				inputs := string(node.StepParameters)
@@ -543,8 +544,8 @@ func FollowMulti(ctx *cmdctx.Ctx, execId, stageFilter, stepFilter string, style 
 			seenNode[id] = true
 			node := exec.Graph.NodeMap[id]
 			name := execgraph.NodeName(node)
-			if node.LogBaseKey != "" && !skipTypes[node.StepType] {
-				lk := node.LogBaseKey
+			if execgraph.HasLogs(node) && !skipTypes[node.StepType] {
+				lk := execgraph.GetLogKey(node)
 				if !seenKey[lk] {
 					seenKey[lk] = true
 					if !nodeStarted[lk] && nodeMatchesFilter(node, parentName) {
