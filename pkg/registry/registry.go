@@ -493,13 +493,22 @@ func (r *Registry) SuggestRootCommand(args []string) string {
 		return ""
 	}
 
+	// Boolean flags that take no value argument (root persistent + common output flags).
+	// All others are assumed to consume the next token as their value.
+	boolFlags := map[string]bool{
+		"--debug": true, "--json": true, "--yaml": true,
+		"--all": true, "--count": true, "--raw": true,
+		"--no-headers": true, "--list-columns": true, "--list-fields": true,
+		"--ui": true, "--force": true, "--spec": true, "--modulehelp": true,
+	}
+
 	// Strip leading flags (e.g. --profile, --debug) to find the first positional arg.
 	positional := make([]string, 0, len(args))
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		if strings.HasPrefix(a, "-") {
-			// Skip the value of flags that take an argument.
-			if !strings.Contains(a, "=") {
+			// Skip the value of flags that take an argument (but not bool flags).
+			if !strings.Contains(a, "=") && !boolFlags[a] {
 				i++
 			}
 			continue

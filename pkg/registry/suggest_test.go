@@ -207,12 +207,62 @@ func TestSuggestRootCommand_NoSuggestion(t *testing.T) {
 func TestSuggestRootCommand_FlagsStripped(t *testing.T) {
 	r := buildTestRegistry(t)
 
-	// Global flags before the noun-verb pair should not interfere.
-	got := r.SuggestRootCommand([]string{"--profile", "prod", "pr", "create"})
-	if got == "" {
-		t.Fatal("expected a suggestion when global flags precede noun-verb pair")
+	tests := []struct {
+		name        string
+		args        []string
+		wantContain string
+	}{
+		{
+			name:        "value flag --profile stripped",
+			args:        []string{"--profile", "prod", "pr", "create"},
+			wantContain: "harness create pr",
+		},
+		{
+			name:        "bool flag --debug stripped (not consuming next positional)",
+			args:        []string{"--debug", "pr", "create"},
+			wantContain: "harness create pr",
+		},
+		{
+			name:        "bool flag --json stripped",
+			args:        []string{"--json", "pr", "create"},
+			wantContain: "harness create pr",
+		},
+		{
+			name:        "bool flag --yaml stripped",
+			args:        []string{"--yaml", "pr", "create"},
+			wantContain: "harness create pr",
+		},
+		{
+			name:        "bool flag --all stripped",
+			args:        []string{"--all", "pr", "list"},
+			wantContain: "harness list pr",
+		},
+		{
+			name:        "bool flag --list-columns stripped",
+			args:        []string{"--list-columns", "pr", "list"},
+			wantContain: "harness list pr",
+		},
+		{
+			name:        "bool flag --list-fields stripped",
+			args:        []string{"--list-fields", "pr", "list"},
+			wantContain: "harness list pr",
+		},
+		{
+			name:        "mixed bool and value flags stripped",
+			args:        []string{"--debug", "--profile", "prod", "--json", "pr", "create"},
+			wantContain: "harness create pr",
+		},
 	}
-	if !strings.Contains(got, "harness create pr") {
-		t.Errorf("suggestion %q does not contain 'harness create pr'", got)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := r.SuggestRootCommand(tt.args)
+			if got == "" {
+				t.Fatalf("expected a suggestion, got empty string")
+			}
+			if !strings.Contains(got, tt.wantContain) {
+				t.Errorf("suggestion %q does not contain %q", got, tt.wantContain)
+			}
+		})
 	}
 }
