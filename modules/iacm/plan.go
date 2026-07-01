@@ -23,10 +23,10 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
+	"github.com/harness/harness-cli/modules/pipeline"
 	"github.com/harness/harness-cli/pkg/auth"
 	"github.com/harness/harness-cli/pkg/cmdctx"
 	"github.com/harness/harness-cli/pkg/console"
-	"github.com/harness/harness-cli/pkg/logstream"
 )
 
 const executeWorkspaceHandlerID = "execute_workspace"
@@ -69,7 +69,11 @@ func (e *iacmAPIError) Error() string { return e.Message }
 func executeWorkspaceHandler(ctx *cmdctx.Ctx) error {
 	a := ctx.Auth
 
-	workspaceID := ctx.Id
+	// Try to get workspace ID from flag, then fall back to ctx.Id (positional arg)
+	workspaceID := cmdctx.GetString(ctx.FlagValues, "workspace")
+	if workspaceID == "" {
+		workspaceID = ctx.Id
+	}
 	orgID := a.OrgID
 	projectID := a.ProjectID
 
@@ -202,11 +206,8 @@ func executePlan(
 	}
 	fmt.Printf("Pipeline execution: %s\n", execURL)
 
-	fmt.Println("\n=== Pipeline Execution Logs ===")
-	return logstream.FollowMulti(cmdCtx, exec.PipelineExecutionID, "", "", logstream.MultiStyleMarkers, map[string]bool{
-		"IACMIntegrationStageStepPMS": true,
-		"IACMPrepareExecution":        true,
-	})
+	fmt.Println("\n=== Launching UI Log Viewer ===")
+	return pipeline.RunLogViewer(exec.PipelineExecutionID, cmdCtx)
 }
 
 // ---- API helpers ----
