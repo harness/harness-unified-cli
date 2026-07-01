@@ -69,7 +69,11 @@ func (e *iacmAPIError) Error() string { return e.Message }
 func executeWorkspaceHandler(ctx *cmdctx.Ctx) error {
 	a := ctx.Auth
 
-	workspaceID := ctx.Id
+	// Try to get workspace ID from flag, then fall back to ctx.Id (positional arg)
+	workspaceID := cmdctx.GetString(ctx.FlagValues, "workspace")
+	if workspaceID == "" {
+		workspaceID = ctx.Id
+	}
 	orgID := a.OrgID
 	projectID := a.ProjectID
 

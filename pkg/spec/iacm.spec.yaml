@@ -219,15 +219,17 @@ commands:
         workspace_id: <your-workspace>  # required if no ID is passed as an argument
 
       Examples:
-        harness execute workspace my-workspace              # explicit workspace ID
-        harness execute workspace                           # reads .harness/workspace.yaml
-        harness execute workspace remote_execution --target aws_instance.web # with target flag
-        harness execute workspace remote_execution --force  # skip confirmation prompt
-    id_label: "[workspace-id]"
+        harness execute workspace --workspace my-workspace              # explicit workspace ID via flag
+        harness execute workspace                                       # reads .harness/workspace.yaml
+        harness execute workspace --workspace remote_execution --target aws_instance.web
+        harness execute workspace --workspace remote_execution --force
+    no_id: true
     completion_noun: workspace
     handler_type: workflow
     workflow_id: execute_workspace
     flags:
+      - name: workspace
+        description: "Workspace ID (optional, reads from .harness/workspace.yaml if not provided)"
       - name: target
         description: "Resource target (can be specified multiple times)"
         is_multi: true
