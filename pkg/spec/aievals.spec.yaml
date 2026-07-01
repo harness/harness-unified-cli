@@ -50,7 +50,7 @@ nouns:
     fields:
       - id: id
         label: ID
-        expr: it.id
+        expr: it.uuid
       - id: identifier
         expr: it.identifier
       - id: name
@@ -62,9 +62,9 @@ nouns:
         expr: it.item_count
         align: right
       - id: created
-        expr: epochMs(it.created_at)
+        expr: epochMs(it.created)
       - id: updated
-        expr: epochMs(it.updated_at)
+        expr: epochMs(it.updated)
 
   - noun: evaluation
     short_desc: An AI Eval wiring a dataset, target, and metric set. Trigger runs via execute action run.
@@ -73,8 +73,6 @@ nouns:
       - id: id
         label: ID
         expr: it.id
-      - id: identifier
-        expr: it.identifier
       - id: name
         expr: it.name
       - id: description
@@ -82,15 +80,23 @@ nouns:
       - id: dataset_id
         label: Dataset
         expr: it.dataset_id
+      - id: dataset_name
+        label: Dataset
+        expr: it.dataset_name
       - id: target_id
         label: Target
         expr: it.target_id
+      - id: target_name
+        label: Target
+        expr: it.target_name
       - id: status
         expr: it.status
+      - id: total_runs
+        label: Runs
+        expr: it.total_runs
+        align: right
       - id: created
         expr: epochMs(it.created_at)
-      - id: updated
-        expr: epochMs(it.updated_at)
 
   - noun: eval_run
     short_desc: A single execution of an AI Eval with per-item scores and an aggregate pass rate.
@@ -98,24 +104,28 @@ nouns:
     fields:
       - id: id
         label: ID
-        expr: it.id
+        expr: it.run_id
       - id: eval_id
         label: Eval
         expr: it.eval_id
       - id: status
         expr: it.status
-      - id: pass_rate
-        label: Pass %
-        expr: it.summary.pass_rate
-        align: right
       - id: total_items
         label: Items
-        expr: it.summary.total_items
+        expr: it.total_items
+        align: right
+      - id: success_count
+        label: Passed
+        expr: it.success_count
+        align: right
+      - id: failed_count
+        label: Failed
+        expr: it.failed_count
         align: right
       - id: started
         expr: epochMs(it.started_at)
       - id: finished
-        expr: epochMs(it.finished_at)
+        expr: epochMs(it.completed_at)
 
   - noun: eval_metric
     short_desc: An AI Evals metric (e.g. exact_match, rubric_judge, contains, geval).
@@ -124,12 +134,14 @@ nouns:
       - id: id
         label: ID
         expr: it.id
-      - id: identifier
-        expr: it.identifier
       - id: name
         expr: it.name
+      - id: type
+        expr: it.type
       - id: kind
         expr: it.kind
+      - id: dimension
+        expr: it.dimension
       - id: description
         expr: it.description
 
@@ -140,16 +152,17 @@ nouns:
       - id: id
         label: ID
         expr: it.id
-      - id: identifier
-        expr: it.identifier
       - id: name
         expr: it.name
       - id: description
         expr: it.description
       - id: metric_count
         label: Metrics
-        expr: it.metric_count
+        expr: len(it.entries)
         align: right
+      - id: judge_model_id
+        label: Judge
+        expr: it.judge_model_id
 
   - noun: eval_target
     short_desc: An AI Evals target — the LLM endpoint under test.
@@ -158,12 +171,13 @@ nouns:
       - id: id
         label: ID
         expr: it.id
-      - id: identifier
-        expr: it.identifier
       - id: name
         expr: it.name
       - id: type
         expr: it.type
+      - id: connector_ref
+        label: Connector
+        expr: it.connector_ref
       - id: description
         expr: it.description
 
@@ -174,8 +188,6 @@ nouns:
       - id: id
         label: ID
         expr: it.id
-      - id: identifier
-        expr: it.identifier
       - id: name
         expr: it.name
       - id: provider
@@ -183,6 +195,9 @@ nouns:
       - id: model_id
         label: Model
         expr: it.model_id
+      - id: is_active
+        label: Active
+        expr: it.is_active
 
   - noun: eval_suite
     short_desc: A named collection of evaluations run together.
@@ -190,13 +205,14 @@ nouns:
     fields:
       - id: id
         label: ID
-        expr: it.id
-      - id: identifier
-        expr: it.identifier
+        expr: it.suite_id
       - id: name
         expr: it.name
       - id: description
         expr: it.description
+      - id: last_run_status
+        label: Last Run
+        expr: it.last_run_status
 
 commands:
   # ── eval_dataset ──────────────────────────────────────────────────────────────
@@ -210,18 +226,19 @@ commands:
       path: /gateway/ai-evals/api/v1/orgs/{{auth.org}}/projects/{{auth.project}}/dataset
       request_headers:
         Harness-Account: auth.account
-      items_expr: it
-      get_id_expr: it.identifier
+      items_expr: it.data
+      get_id_expr: it.uuid
       query_params:
         page: flags.page
-        size: flags.limit
+        limit: flags.limit
       paging:
-        paging_strategy: page_header
-        countable: false
+        paging_strategy: page_index
+        countable: true
         page_index_param: page
-        page_size_param: size
+        page_size_param: limit
         page_size_default: 20
-        page_size_max: 100
+        page_size_max: 200
+        total_expr: it.total_elements
       columns: [identifier, name, item_count, created]
 
   - command: get eval_dataset
@@ -275,19 +292,20 @@ commands:
       path: /gateway/ai-evals/api/v1/orgs/{{auth.org}}/projects/{{auth.project}}/evals
       request_headers:
         Harness-Account: auth.account
-      items_expr: it
-      get_id_expr: it.identifier
+      items_expr: it.data
+      get_id_expr: it.id
       query_params:
         page: flags.page
-        size: flags.limit
+        limit: flags.limit
       paging:
-        paging_strategy: page_header
-        countable: false
+        paging_strategy: page_index
+        countable: true
         page_index_param: page
-        page_size_param: size
+        page_size_param: limit
         page_size_default: 20
-        page_size_max: 100
-      columns: [identifier, name, dataset_id, target_id, status, updated]
+        page_size_max: 200
+        total_expr: it.total_elements
+      columns: [id, name, dataset_name, target_name, status, total_runs]
 
   - command: get evaluation
     verb: get
@@ -314,7 +332,7 @@ commands:
         Harness-Account: auth.account
       create_strategy: set-fields
       create_body_wrap: ""
-      text_header: "\nCreated eval {{it.identifier}}\n"
+      text_header: "\nCreated eval {{it.id}}\n"
 
   - command: delete evaluation
     verb: delete
@@ -348,26 +366,28 @@ commands:
   - command: list eval_run
     verb: list
     noun: eval_run
-    short: "List AI Eval runs (optionally filtered by eval ID as parentid)"
+    short: "List runs for an AI Eval: harness list eval_run <eval_id>"
+    requires_parentid: true
+    parentid_label: eval
     handler_type: endpoint
     endpoint:
-      path: /gateway/ai-evals/api/v1/orgs/{{auth.org}}/projects/{{auth.project}}/runs
+      path: /gateway/ai-evals/api/v1/orgs/{{auth.org}}/projects/{{auth.project}}/evals/{{ctx.parentId}}/runs
       request_headers:
         Harness-Account: auth.account
-      items_expr: it
+      items_expr: it.data
       get_id_expr: it.id
       query_params:
-        eval_id: ctx.parentId
         page: flags.page
-        size: flags.limit
+        limit: flags.limit
       paging:
-        paging_strategy: page_header
-        countable: false
+        paging_strategy: page_index
+        countable: true
         page_index_param: page
-        page_size_param: size
+        page_size_param: limit
         page_size_default: 20
-        page_size_max: 100
-      columns: [id, eval_id, status, pass_rate, total_items, started]
+        page_size_max: 200
+        total_expr: it.total_elements
+      columns: [id, eval_id, status, total_items, success_count, started]
 
   - command: get eval_run
     verb: get
@@ -391,19 +411,20 @@ commands:
       path: /gateway/ai-evals/api/v1/orgs/{{auth.org}}/projects/{{auth.project}}/metrics
       request_headers:
         Harness-Account: auth.account
-      items_expr: it
-      get_id_expr: it.identifier
+      items_expr: it.data
+      get_id_expr: it.id
       query_params:
         page: flags.page
-        size: flags.limit
+        limit: flags.limit
       paging:
-        paging_strategy: page_header
-        countable: false
+        paging_strategy: page_index
+        countable: true
         page_index_param: page
-        page_size_param: size
+        page_size_param: limit
         page_size_default: 20
-        page_size_max: 100
-      columns: [identifier, name, kind]
+        page_size_max: 200
+        total_expr: it.total_elements
+      columns: [id, name, type, dimension]
 
   - command: get eval_metric
     verb: get
@@ -430,7 +451,7 @@ commands:
         Harness-Account: auth.account
       create_strategy: set-fields
       create_body_wrap: ""
-      text_header: "\nCreated metric {{it.identifier}}\n"
+      text_header: "\nCreated metric {{it.id}}\n"
 
   - command: delete eval_metric
     verb: delete
@@ -456,19 +477,20 @@ commands:
       path: /gateway/ai-evals/api/v1/orgs/{{auth.org}}/projects/{{auth.project}}/metric-sets
       request_headers:
         Harness-Account: auth.account
-      items_expr: it
-      get_id_expr: it.identifier
+      items_expr: it.data
+      get_id_expr: it.id
       query_params:
         page: flags.page
-        size: flags.limit
+        limit: flags.limit
       paging:
-        paging_strategy: page_header
-        countable: false
+        paging_strategy: page_index
+        countable: true
         page_index_param: page
-        page_size_param: size
+        page_size_param: limit
         page_size_default: 20
-        page_size_max: 100
-      columns: [identifier, name, metric_count]
+        page_size_max: 200
+        total_expr: it.total_elements
+      columns: [id, name, metric_count, judge_model_id]
 
   - command: get eval_metric_set
     verb: get
@@ -495,7 +517,7 @@ commands:
         Harness-Account: auth.account
       create_strategy: set-fields
       create_body_wrap: ""
-      text_header: "\nCreated metric set {{it.identifier}}\n"
+      text_header: "\nCreated metric set {{it.id}}\n"
 
   - command: delete eval_metric_set
     verb: delete
@@ -521,19 +543,20 @@ commands:
       path: /gateway/ai-evals/api/v1/orgs/{{auth.org}}/projects/{{auth.project}}/targets
       request_headers:
         Harness-Account: auth.account
-      items_expr: it
-      get_id_expr: it.identifier
+      items_expr: it.data
+      get_id_expr: it.id
       query_params:
         page: flags.page
-        size: flags.limit
+        limit: flags.limit
       paging:
-        paging_strategy: page_header
-        countable: false
+        paging_strategy: page_index
+        countable: true
         page_index_param: page
-        page_size_param: size
+        page_size_param: limit
         page_size_default: 20
-        page_size_max: 100
-      columns: [identifier, name, type]
+        page_size_max: 200
+        total_expr: it.total_elements
+      columns: [id, name, type, connector_ref]
 
   - command: get eval_target
     verb: get
@@ -560,7 +583,7 @@ commands:
         Harness-Account: auth.account
       create_strategy: set-fields
       create_body_wrap: ""
-      text_header: "\nCreated target {{it.identifier}}\n"
+      text_header: "\nCreated target {{it.id}}\n"
 
   - command: delete eval_target
     verb: delete
@@ -586,19 +609,20 @@ commands:
       path: /gateway/ai-evals/api/v1/orgs/{{auth.org}}/projects/{{auth.project}}/models
       request_headers:
         Harness-Account: auth.account
-      items_expr: it
-      get_id_expr: it.identifier
+      items_expr: it.data
+      get_id_expr: it.id
       query_params:
         page: flags.page
-        size: flags.limit
+        limit: flags.limit
       paging:
-        paging_strategy: page_header
-        countable: false
+        paging_strategy: page_index
+        countable: true
         page_index_param: page
-        page_size_param: size
+        page_size_param: limit
         page_size_default: 20
-        page_size_max: 100
-      columns: [identifier, name, provider, model_id]
+        page_size_max: 200
+        total_expr: it.total_elements
+      columns: [id, name, provider, model_id, is_active]
 
   - command: get eval_model
     verb: get
@@ -625,7 +649,7 @@ commands:
         Harness-Account: auth.account
       create_strategy: set-fields
       create_body_wrap: ""
-      text_header: "\nCreated model {{it.identifier}}\n"
+      text_header: "\nCreated model {{it.id}}\n"
 
   - command: delete eval_model
     verb: delete
@@ -651,19 +675,20 @@ commands:
       path: /gateway/ai-evals/api/v1/orgs/{{auth.org}}/projects/{{auth.project}}/suites
       request_headers:
         Harness-Account: auth.account
-      items_expr: it
-      get_id_expr: it.identifier
+      items_expr: it.data
+      get_id_expr: it.suite_id
       query_params:
         page: flags.page
-        size: flags.limit
+        limit: flags.limit
       paging:
-        paging_strategy: page_header
-        countable: false
+        paging_strategy: page_index
+        countable: true
         page_index_param: page
-        page_size_param: size
+        page_size_param: limit
         page_size_default: 20
-        page_size_max: 100
-      columns: [identifier, name, description]
+        page_size_max: 200
+        total_expr: it.total_elements
+      columns: [id, name, description, last_run_status]
 
   - command: get eval_suite
     verb: get
