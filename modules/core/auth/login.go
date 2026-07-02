@@ -176,12 +176,15 @@ func LoginHandler(ctx *cmdctx.Ctx) error {
 		}
 	}
 
+	email := fetchTokenEmail(apiURL, token, accountID)
+
 	cfg.Profiles[profileName] = &config.Profile{
 		APIUrl:      apiURL,
 		AccountID:   accountID,
 		OrgID:       orgID,
 		ProjectID:   projectID,
 		RegistryURL: registryURL,
+		Email:       email,
 	}
 	if err := config.SaveConfig(cfg); err != nil {
 		return fmt.Errorf("saving profile: %w", err)

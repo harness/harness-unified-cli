@@ -253,6 +253,23 @@ func (m wizardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyPressMsg:
+		// When a list is actively filtering, forward all keys to it so that
+		// characters like "s" and "esc" don't trigger our shortcut handlers.
+		switch m.step {
+		case stepOrgPick:
+			if m.orgList.FilterState() == list.Filtering {
+				var cmd tea.Cmd
+				m.orgList, cmd = m.orgList.Update(msg)
+				return m, cmd
+			}
+		case stepProjectPick:
+			if m.projList.FilterState() == list.Filtering {
+				var cmd tea.Cmd
+				m.projList, cmd = m.projList.Update(msg)
+				return m, cmd
+			}
+		}
+
 		switch msg.String() {
 		case "ctrl+c":
 			m.canceled = true

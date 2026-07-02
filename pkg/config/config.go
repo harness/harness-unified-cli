@@ -30,6 +30,7 @@ type Profile struct {
 	ProjectID   string   `yaml:"project_id,omitempty"`
 	RegistryURL string   `yaml:"registry_url,omitempty"`
 	AuthType    AuthType `yaml:"auth_type,omitempty"` // omitted for existing PAT profiles
+	Email       string   `yaml:"email,omitempty"`     // user email; populated on login/status, empty for legacy profiles
 }
 
 type Config struct {

@@ -76,7 +76,7 @@ func LoginSSOHandler(ctx *cmdctx.Ctx) error {
 		return fmt.Errorf("SSO discovery failed: %w", err)
 	}
 
-	token, refreshToken, accountID, subdomain, err := runPKCEFlow(meta)
+	token, refreshToken, accountID, subdomain, email, err := runPKCEFlow(meta)
 	if err != nil {
 		return fmt.Errorf("SSO login failed: %w", err)
 	}
@@ -115,6 +115,7 @@ func LoginSSOHandler(ctx *cmdctx.Ctx) error {
 		OrgID:     orgID,
 		ProjectID: projectID,
 		AuthType:  auth.AuthTypeSSO,
+		Email:     email,
 	}
 	if err := config.SaveConfig(cfg); err != nil {
 		return fmt.Errorf("saving profile: %w", err)
@@ -147,22 +148,22 @@ func resolveUIURL(subdomain string) string {
 
 // --- PKCE flow ---
 
-func runPKCEFlow(meta *auth.AuthServerMeta) (token, refreshToken, accountID, subdomain string, err error) {
+func runPKCEFlow(meta *auth.AuthServerMeta) (token, refreshToken, accountID, subdomain, email string, err error) {
 	verifier, err := auth.GenerateCodeVerifier()
 	if err != nil {
-		return "", "", "", "", fmt.Errorf("generating PKCE verifier: %w", err)
+		return "", "", "", "", "", fmt.Errorf("generating PKCE verifier: %w", err)
 	}
 	challenge := auth.CodeChallenge(verifier)
 
 	state, err := auth.RandomState()
 	if err != nil {
-		return "", "", "", "", err
+		return "", "", "", "", "", err
 	}
 
 	redirectURI := fmt.Sprintf("http://localhost:%d%s", ssoPort, ssoCallbackPath)
 	ln, err := net.Listen("tcp", fmt.Sprintf("localhost:%d", ssoPort))
 	if err != nil {
-		return "", "", "", "", fmt.Errorf("starting local callback server on port %d: %w", ssoPort, err)
+		return "", "", "", "", "", fmt.Errorf("starting local callback server on port %d: %w", ssoPort, err)
 	}
 
 	authURL := buildAuthURL(meta.AuthorizationEndpoint, auth.SSOClientID, redirectURI, challenge, state)
@@ -171,20 +172,20 @@ func runPKCEFlow(meta *auth.AuthServerMeta) (token, refreshToken, accountID, sub
 
 	code, err := waitForCallback(ln, state)
 	if err != nil {
-		return "", "", "", "", fmt.Errorf("callback failed: %w", err)
+		return "", "", "", "", "", fmt.Errorf("callback failed: %w", err)
 	}
 
 	rawToken, rawRefreshToken, err := auth.ExchangeCode(meta.TokenEndpoint, auth.SSOClientID, code, verifier, redirectURI)
 	if err != nil {
-		return "", "", "", "", fmt.Errorf("token exchange failed: %w", err)
+		return "", "", "", "", "", fmt.Errorf("token exchange failed: %w", err)
 	}
 
 	claims, err := parseJWT(rawToken)
 	if err != nil {
-		return "", "", "", "", fmt.Errorf("extracting claims from token: %w", err)
+		return "", "", "", "", "", fmt.Errorf("extracting claims from token: %w", err)
 	}
 
-	return rawToken, rawRefreshToken, claims.AccountID, claims.Subdomain, nil
+	return rawToken, rawRefreshToken, claims.AccountID, claims.Subdomain, claims.Email, nil
 }
 
 func buildAuthURL(endpoint, clientID, redirectURI, challenge, state string) string {
@@ -293,6 +294,7 @@ type callbackPageData struct {
 type jwtClaims struct {
 	AccountID string // from account_id claim
 	Subdomain string // from account_metadata.<accountId>.subdomain (may be empty)
+	Email     string // from email claim (may be empty)
 }
 
 // parseJWT extracts claims from the JWT payload (no signature verification —
@@ -346,5 +348,7 @@ func parseJWT(rawToken string) (*jwtClaims, error) {
 		}
 	}
 
-	return &jwtClaims{AccountID: accountID, Subdomain: subdomain}, nil
+	email, _ := raw["email"].(string)
+
+	return &jwtClaims{AccountID: accountID, Subdomain: subdomain, Email: email}, nil
 }
