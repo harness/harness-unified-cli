@@ -33,6 +33,8 @@ func MakePagingStrategy(strategyName string) (PagingStrategy, error) {
 		return pageIndexStrategy{}, nil
 	case spec.PagingStrategyPageHeader:
 		return pageHeaderStrategy{}, nil
+	case spec.PagingStrategyOffsetLimit:
+		return offsetLimitStrategy{}, nil
 	default:
 		return nil, fmt.Errorf("unsupported paging strategy %q", strategyName)
 	}
@@ -188,6 +190,70 @@ func (pageHeaderStrategy) ExtractPaging(_ *cmdctx.Ctx, ep *spec.EndpointSpec, ra
 	pr.Last = len(items) == 0 ||
 		(d.pageSize > 0 && len(items) < d.pageSize) ||
 		(pr.HasTotal && int64(d.startOffset+len(items)) >= pr.Total)
+
+	return pr, nil
+}
+
+// ---------------------------------------------------------------------------
+// offset_limit
+// ---------------------------------------------------------------------------
+
+// offsetLimitStrategy sends offset=pageIndex*pageSize and limit=pageSize.
+// Used for APIs that use item-count offsets rather than page numbers (e.g. FME).
+type offsetLimitStrategy struct{}
+
+type offsetLimitData struct {
+	offset   int
+	pageSize int
+}
+
+func (offsetLimitStrategy) InjectPaging(req *client.Request, pg *spec.PagingSpec, wantStart, wantCount int) any {
+	pageSize := pg.PageSizeMax
+	if wantCount < pageSize {
+		pageSize = wantCount
+	}
+	offset := wantStart
+
+	offsetParam := pg.PageIndexParam
+	if offsetParam == "" {
+		offsetParam = "offset"
+	}
+	if req.QueryParams == nil {
+		req.QueryParams = map[string]string{}
+	}
+	req.QueryParams[offsetParam] = strconv.Itoa(offset)
+	if pg.PageSizeParam != "" && pageSize > 0 {
+		req.QueryParams[pg.PageSizeParam] = strconv.Itoa(pageSize)
+	}
+
+	return offsetLimitData{offset: offset, pageSize: pageSize}
+}
+
+func (offsetLimitStrategy) ExtractPaging(ctx *cmdctx.Ctx, ep *spec.EndpointSpec, raw any, items []any, _ http.Header, pagingData any) (*cmdctx.PageResult, error) {
+	d := pagingData.(offsetLimitData)
+
+	pr := &cmdctx.PageResult{
+		Raw:         raw,
+		Items:       items,
+		StartOffset: d.offset,
+	}
+
+	if ep.Paging.TotalExpr != "" {
+		exprEnv := exprenv.WithIt(exprenv.Make(ctx), raw)
+		v, ok := exprenv.EvalExprAny(exprEnv, ep.Paging.TotalExpr)
+		if !ok {
+			return nil, fmt.Errorf("offset_limit: total_expr %q did not resolve", ep.Paging.TotalExpr)
+		}
+		n, err := toInt64(v)
+		if err != nil {
+			return nil, fmt.Errorf("offset_limit: total_expr %q resolved to unexpected type %T", ep.Paging.TotalExpr, v)
+		}
+		pr.HasTotal, pr.Total = true, n
+	}
+
+	pr.Last = len(items) == 0 ||
+		(d.pageSize > 0 && len(items) < d.pageSize) ||
+		(pr.HasTotal && int64(d.offset+len(items)) >= pr.Total)
 
 	return pr, nil
 }

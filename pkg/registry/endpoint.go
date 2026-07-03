@@ -140,6 +140,10 @@ func callEndpointFull(ctx *cmdctx.Ctx, ep *spec.EndpointSpec, extraQueryParams m
 		result, err := runGetThenPutKV(ctx, ep, c, path)
 		return result, nil, err
 	}
+	if ep.UpdateStrategy == spec.UpdateStrategyGetThenPatch && method == "PATCH" {
+		result, err := runGetThenPatch(ctx, ep, c, path)
+		return result, nil, err
+	}
 	if ep.CreateStrategy == spec.CreateStrategySetFields && method == "POST" {
 		result, err := runSetFields(ctx, ep, c, path)
 		return result, nil, err
@@ -600,6 +604,76 @@ func runGetThenPut(ctx *cmdctx.Ctx, ep *spec.EndpointSpec, c *client.Client, pat
 	}
 	putQP := evalQueryParams(ctx, ep.QueryParams, true)
 	result, _, err := c.Put(path, putQP, putBody)
+	return result, err
+}
+
+// runGetThenPatch implements the "get-then-patch" update strategy:
+//  1. GET the resource using get_path (falls back to path)
+//  2. Extract ep.UpdateBodyPick subtree from the response
+//  3. Apply --set/--del mutations using noun field paths
+//  4. Re-wrap under ep.UpdateBodyWrap key (if set)
+//  5. PATCH the result with Content-Type: application/merge-patch+json
+func runGetThenPatch(ctx *cmdctx.Ctx, ep *spec.EndpointSpec, c *client.Client, path string) (any, error) {
+	exprEnv := exprenv.Make(ctx)
+
+	getPath := path
+	if ep.GetPath != "" {
+		var err error
+		getPath, err = exprenv.ResolvePath(exprEnv, ep.GetPath)
+		if err != nil {
+			return nil, fmt.Errorf("get-then-patch: resolving get_path %q: %w", ep.GetPath, err)
+		}
+	}
+
+	getQP := evalQueryParams(ctx, firstNonEmptyMap(ep.GetQueryParams, ep.QueryParams), true)
+	getResult, _, err := c.Get(getPath, getQP)
+	if err != nil {
+		return nil, fmt.Errorf("get-then-patch: GET failed: %w", err)
+	}
+
+	item := getResult
+	if ep.UpdateBodyPick != "" {
+		picked, ok := exprenv.EvalExprAny(exprenv.WithIt(exprEnv, getResult), ep.UpdateBodyPick)
+		if !ok {
+			return nil, fmt.Errorf("get-then-patch: update_body_pick %q did not resolve", ep.UpdateBodyPick)
+		}
+		item = picked
+	} else if ep.ItemExpr != "" && ep.ItemExpr != "it" {
+		if v, ok := exprenv.EvalExprAny(exprenv.WithIt(exprEnv, getResult), ep.ItemExpr); ok {
+			item = v
+		}
+	}
+
+	b, err := json.Marshal(item)
+	if err != nil {
+		return nil, fmt.Errorf("get-then-patch: marshaling picked item: %w", err)
+	}
+	var mutable map[string]any
+	if err := json.Unmarshal(b, &mutable); err != nil {
+		return nil, fmt.Errorf("get-then-patch: unmarshaling picked item: %w", err)
+	}
+
+	fieldPaths := map[string]spec.FieldDef{}
+	for _, f := range MutableFields(resolveNounDef(ctx)) {
+		fieldPaths[f.ID] = f
+	}
+
+	if err := applyMutations(mutable, ctx.SetArgs, ctx.DelArgs, fieldPaths); err != nil {
+		return nil, err
+	}
+
+	var patchBody any = mutable
+	if ep.UpdateBodyWrap != "" {
+		patchBody = map[string]any{ep.UpdateBodyWrap: mutable}
+	}
+	patchQP := evalQueryParams(ctx, ep.QueryParams, true)
+	result, _, err := c.DoRequest(client.Request{
+		Method:          "PATCH",
+		Path:            path,
+		QueryParams:     patchQP,
+		Body:            patchBody,
+		BodyContentType: "application/merge-patch+json",
+	})
 	return result, err
 }
 

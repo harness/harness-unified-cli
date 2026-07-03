@@ -47,6 +47,7 @@ const (
 const (
 	UpdateStrategyGetThenPut   = "get-then-put"
 	UpdateStrategyGetThenPutKV = "get-then-put-kv"
+	UpdateStrategyGetThenPatch = "get-then-patch"
 )
 
 // Valid create_strategy values for EndpointSpec.
@@ -63,11 +64,12 @@ const (
 
 // Valid paging_strategy values for PagingSpec.
 const (
-	PagingStrategyPageIndex  = "page_index"  // API accepts pageIndex + pageSize; response has totalItems, content, empty
-	PagingStrategyPageHeader = "page_header" // v1 API: bare array body; total/page info in X-Total-Elements / X-Page-Number / X-Page-Size response headers
-	PagingStrategyFlatList   = "flat_list"   // API returns all items in one shot; offset/limit applied client-side
-	PagingStrategyNone       = "none"        // API returns everything; offset/limit applied client-side
-	PagingStrategyCursor     = "cursor"      // token-based iteration; no random access, not countable (not yet implemented)
+	PagingStrategyPageIndex  = "page_index"   // API accepts pageIndex + pageSize; response has totalItems, content, empty
+	PagingStrategyPageHeader = "page_header"  // v1 API: bare array body; total/page info in X-Total-Elements / X-Page-Number / X-Page-Size response headers
+	PagingStrategyFlatList   = "flat_list"    // API returns all items in one shot; offset/limit applied client-side
+	PagingStrategyNone       = "none"         // API returns everything; offset/limit applied client-side
+	PagingStrategyCursor     = "cursor"       // token-based iteration; no random access, not countable (not yet implemented)
+	PagingStrategyOffsetLimit = "offset_limit" // API accepts offset (items to skip) + limit; response has totalCount
 )
 
 // BuiltinFlags enables predefined system flags that have fixed registration and dispatch behavior.
