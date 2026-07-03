@@ -1,0 +1,394 @@
+spec_version: 1
+module_type: builtin
+module_desc: Harness FME — Feature flags and targeting definitions
+help_text: |
+  ## Feature Management & Experimentation (fme)
+
+  Manage feature flags and their environment-specific targeting definitions.
+
+  {{nouns}}
+
+nouns:
+  - noun: feature_flag
+    short_desc: A Harness FME feature flag.
+    noun_aliases: [feature_flags, ff]
+    fields:
+      - id: name
+        expr: it.entity.name
+      - id: description
+        expr: it.entity.description ?? ""
+        width_max: 60
+      - id: traffic_type
+        label: Traffic Type
+        expr: it.entity.trafficType.name
+      - id: status
+        expr: it.entity.status
+      - id: rollout_status
+        label: Rollout Status
+        expr: it.entity.rolloutStatus.name ?? ""
+      - id: created
+        expr: it.entity.createdAt
+        field_type: ts
+
+commands:
+  # ── feature_flag ─────────────────────────────────────────────────────────────
+
+  - command: list feature_flag
+    verb: list
+    noun: feature_flag
+    short: List feature flags
+    handler_type: endpoint
+    flags:
+      - name: search
+        description: Filter by name (partial match)
+      - name: status
+        description: "Filter by status: ACTIVE, ARCHIVED"
+        completion_values: [ACTIVE, ARCHIVED]
+    endpoint:
+      path: /v3/feature-flags
+      items_expr: it.data
+      item_item_expr: it
+      get_id_expr: it.entity.name
+      query_params:
+        account_id: auth.account
+        organization_identifier: auth.org
+        project_identifier: auth.project
+        name: flags.search
+        rollout_statuses: flags.status
+      paging:
+        paging_strategy: offset_limit
+        page_index_param: offset
+        page_size_param: limit
+        page_size_default: 20
+        page_size_max: 100
+        total_expr: it.totalCount
+        countable: true
+      columns: [name, traffic_type, status, rollout_status, created]
+
+  - command: get feature_flag
+    verb: get
+    noun: feature_flag
+    short: Get feature flag details
+    handler_type: endpoint
+    endpoint:
+      path: /v3/feature-flags/{{ctx.id}}
+      query_params:
+        account_id: auth.account
+        organization_identifier: auth.org
+        project_identifier: auth.project
+      item_expr: it
+      yaml_pick_expr: it.entity
+
+  - command: create feature_flag
+    verb: create
+    noun: feature_flag
+    short: "Create a feature flag: harness create ff <name> --traffic-type user"
+    handler_type: endpoint
+    flags:
+      - name: traffic-type
+        description: Traffic type for the feature flag (e.g. user, account)
+        required: true
+    flags_builtin:
+      set: true
+    endpoint:
+      method: POST
+      path: /v3/feature-flags
+      query_params:
+        account_id: auth.account
+        organization_identifier: auth.org
+        project_identifier: auth.project
+      create_strategy: set-fields
+      create_body_init:
+        name: ctx.id
+        trafficType: flags.traffic-type
+      create_body_wrap: ""
+      item_expr: it
+      text_header: "\nCreated feature flag {{it.entity.name}}\n"
+
+  - command: update feature_flag
+    verb: update
+    noun: feature_flag
+    short: "Update a feature flag: harness update ff <name> --set description=foo"
+    handler_type: endpoint
+    flags_builtin:
+      set: true
+      del: true
+    endpoint:
+      method: PATCH
+      path: /v3/feature-flags/{{ctx.id}}
+      get_path: /v3/feature-flags/{{ctx.id}}
+      update_strategy: get-then-patch
+      update_body_pick: it.entity
+      update_body_wrap: ""
+      query_params:
+        account_id: auth.account
+        organization_identifier: auth.org
+        project_identifier: auth.project
+      item_expr: it
+      text_header: "\nUpdated feature flag {{ctx.id}}\n"
+
+  - command: delete feature_flag
+    verb: delete
+    noun: feature_flag
+    confirm_mode: prompt
+    short: Delete a feature flag (must have no active definitions)
+    handler_type: endpoint
+    endpoint:
+      method: DELETE
+      path: /v3/feature-flags/{{ctx.id}}
+      query_params:
+        account_id: auth.account
+        organization_identifier: auth.org
+        project_identifier: auth.project
+
+  - command: execute feature_flag:archive
+    verb: execute
+    noun: feature_flag
+    noun_variant: archive
+    short: Archive a feature flag (cascades to all definitions)
+    handler_type: endpoint
+    flags:
+      - name: comment
+        description: Audit comment
+    endpoint:
+      method: POST
+      path: /v3/feature-flags/{{ctx.id}}/archive
+      query_params:
+        account_id: auth.account
+        organization_identifier: auth.org
+        project_identifier: auth.project
+      body_params:
+        comment: flags.comment
+      item_expr: it
+      text_header: "\nArchived feature flag {{ctx.id}}\n"
+
+  - command: execute feature_flag:unarchive
+    verb: execute
+    noun: feature_flag
+    noun_variant: unarchive
+    short: Unarchive a feature flag
+    handler_type: endpoint
+    flags:
+      - name: comment
+        description: Audit comment
+    endpoint:
+      method: POST
+      path: /v3/feature-flags/{{ctx.id}}/unarchive
+      query_params:
+        account_id: auth.account
+        organization_identifier: auth.org
+        project_identifier: auth.project
+      body_params:
+        comment: flags.comment
+      item_expr: it
+      text_header: "\nUnarchived feature flag {{ctx.id}}\n"
+
+  # ── feature_flag:definition ───────────────────────────────────────────────────
+
+  - command: list feature_flag:definition
+    verb: list
+    noun: feature_flag
+    noun_variant: definition
+    short: "List definitions for a flag across environments: harness list ff:definition <flag-name>"
+    handler_type: endpoint
+    requires_parentid: true
+    parentid_label: "<flag-name>"
+    endpoint:
+      path: /v3/feature-flag-definitions
+      items_expr: it.data
+      item_item_expr: it
+      get_id_expr: it.entity.environment.id
+      query_params:
+        account_id: auth.account
+        organization_identifier: auth.org
+        project_identifier: auth.project
+        feature_flag_name: ctx.parentId
+      paging:
+        paging_strategy: offset_limit
+        page_index_param: offset
+        page_size_param: limit
+        page_size_default: 20
+        page_size_max: 100
+        total_expr: it.totalCount
+        countable: true
+      fields_extra:
+        - id: environment
+          expr: it.entity.environment.name
+        - id: default_treatment
+          label: Default Treatment
+          expr: it.entity.defaultTreatment
+        - id: traffic_allocation
+          label: Traffic Allocation
+          expr: string(it.entity.trafficAllocation)
+        - id: is_killed
+          label: Killed
+          expr: string(it.entity.killed)
+        - id: modified
+          expr: it.entity.modifiedAt
+          field_type: ts
+      columns: [environment, default_treatment, traffic_allocation, is_killed, modified]
+
+  - command: get feature_flag:definition
+    verb: get
+    noun: feature_flag
+    noun_variant: definition
+    short: "Get a flag definition for a specific environment: harness get ff:definition <flag-name> --env <env-id>"
+    handler_type: endpoint
+    flags:
+      - name: env
+        description: Environment identifier (required)
+        required: true
+    endpoint:
+      path: /v3/feature-flag-definitions/{{ctx.id}}
+      query_params:
+        account_id: auth.account
+        organization_identifier: auth.org
+        project_identifier: auth.project
+        environment_id: flags.env
+      item_expr: it
+      yaml_pick_expr: it.entity
+
+  - command: create feature_flag:definition
+    verb: create
+    noun: feature_flag
+    noun_variant: definition
+    short: "Create a flag definition in an environment: harness create ff:definition <flag-name> --env <env-id> -f def.json"
+    handler_type: endpoint
+    flags:
+      - name: env
+        description: Environment identifier (required)
+        required: true
+    endpoint:
+      method: POST
+      file_body: required
+      path: /v3/feature-flag-definitions/{{ctx.id}}
+      query_params:
+        account_id: auth.account
+        organization_identifier: auth.org
+        project_identifier: auth.project
+        environment_id: flags.env
+      item_expr: it
+      text_header: "\nCreated definition for {{ctx.id}} in {{flags.env}}\n"
+
+  - command: update feature_flag:definition
+    verb: update
+    noun: feature_flag
+    noun_variant: definition
+    short: "Update a flag definition: harness update ff:definition <name> --env <env-id> --set trafficAllocation=80"
+    handler_type: endpoint
+    flags:
+      - name: env
+        description: Environment identifier (required)
+        required: true
+    flags_builtin:
+      set: true
+      del: true
+    endpoint:
+      method: PATCH
+      path: /v3/feature-flag-definitions/{{ctx.id}}
+      get_path: /v3/feature-flag-definitions/{{ctx.id}}
+      update_strategy: get-then-patch
+      update_body_pick: it.entity
+      update_body_wrap: ""
+      query_params:
+        account_id: auth.account
+        organization_identifier: auth.org
+        project_identifier: auth.project
+        environment_id: flags.env
+      item_expr: it
+      text_header: "\nUpdated definition for {{ctx.id}} in {{flags.env}}\n"
+
+  - command: delete feature_flag:definition
+    verb: delete
+    noun: feature_flag
+    noun_variant: definition
+    confirm_mode: prompt
+    short: Delete a flag definition from an environment
+    handler_type: endpoint
+    flags:
+      - name: env
+        description: Environment identifier (required)
+        required: true
+    endpoint:
+      method: DELETE
+      path: /v3/feature-flag-definitions/{{ctx.id}}
+      query_params:
+        account_id: auth.account
+        organization_identifier: auth.org
+        project_identifier: auth.project
+        environment_id: flags.env
+
+  - command: execute feature_flag:kill
+    verb: execute
+    noun: feature_flag
+    noun_variant: kill
+    short: "Kill a flag in an environment (all traffic → defaultTreatment): harness execute ff:kill <flag-name> --env <env-id>"
+    handler_type: endpoint
+    flags:
+      - name: env
+        description: Environment identifier (required)
+        required: true
+      - name: comment
+        description: Audit comment
+    endpoint:
+      method: POST
+      path: /v3/feature-flag-definitions/{{ctx.id}}/kill
+      query_params:
+        account_id: auth.account
+        organization_identifier: auth.org
+        project_identifier: auth.project
+        environment_id: flags.env
+      body_params:
+        comment: flags.comment
+      item_expr: it
+      text_header: "\nKilled feature flag {{ctx.id}} in {{flags.env}}\n"
+
+  - command: execute feature_flag:restore
+    verb: execute
+    noun: feature_flag
+    noun_variant: restore
+    short: Restore a killed flag definition
+    handler_type: endpoint
+    flags:
+      - name: env
+        description: Environment identifier (required)
+        required: true
+      - name: comment
+        description: Audit comment
+    endpoint:
+      method: POST
+      path: /v3/feature-flag-definitions/{{ctx.id}}/restore
+      query_params:
+        account_id: auth.account
+        organization_identifier: auth.org
+        project_identifier: auth.project
+        environment_id: flags.env
+      body_params:
+        comment: flags.comment
+      item_expr: it
+      text_header: "\nRestored feature flag {{ctx.id}} in {{flags.env}}\n"
+
+  - command: execute feature_flag:reallocate
+    verb: execute
+    noun: feature_flag
+    noun_variant: reallocate
+    short: Re-hash traffic distribution for a flag definition
+    handler_type: endpoint
+    flags:
+      - name: env
+        description: Environment identifier (required)
+        required: true
+      - name: comment
+        description: Audit comment
+    endpoint:
+      method: POST
+      path: /v3/feature-flag-definitions/{{ctx.id}}/reallocate
+      query_params:
+        account_id: auth.account
+        organization_identifier: auth.org
+        project_identifier: auth.project
+        environment_id: flags.env
+      body_params:
+        comment: flags.comment
+      item_expr: it
+      text_header: "\nReallocated traffic for {{ctx.id}} in {{flags.env}}\n"
