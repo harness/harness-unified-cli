@@ -201,10 +201,10 @@ func validateEndpointConstraints(cs *spec.CommandSpec) error {
 		return fmt.Errorf("command %q: invalid file_body %q (must be \"optional\" or \"required\")", cs.Command, ep.FileBody)
 	}
 	switch ep.ContentType {
-	case "", "application/json", "application/yaml":
+	case "", "application/json", "application/merge-patch+json", "application/yaml":
 		// valid
 	default:
-		return fmt.Errorf("command %q: invalid content_type %q (must be \"application/json\" or \"application/yaml\")", cs.Command, ep.ContentType)
+		return fmt.Errorf("command %q: invalid content_type %q (must be \"application/json\", \"application/merge-patch+json\", or \"application/yaml\")", cs.Command, ep.ContentType)
 	}
 	if ep.ContentType != "" && ep.FileBody == spec.FileBodyNone {
 		return fmt.Errorf("command %q: content_type requires file_body to be set", cs.Command)
@@ -214,27 +214,29 @@ func validateEndpointConstraints(cs *spec.CommandSpec) error {
 
 func validatePaging(command string, pg *spec.PagingSpec) error {
 	switch pg.PagingStrategy {
-	case spec.PagingStrategyPageIndex, spec.PagingStrategyPageHeader:
+	case spec.PagingStrategyPageIndex, spec.PagingStrategyPageHeader, spec.PagingStrategyOffsetLimit:
 		// valid, fall through to server-paging checks below
 	case spec.PagingStrategyFlatList:
 		return nil
 	default:
 		return fmt.Errorf("command %q: unknown paging model %q", command, pg.PagingStrategy)
 	}
-	if pg.PageSizeDefault <= 0 {
-		return fmt.Errorf("command %q: paging requires page_size_default > 0", command)
-	}
 	if pg.PageSizeMax <= 0 {
 		return fmt.Errorf("command %q: paging requires page_size_max > 0", command)
 	}
-	if pg.PageSizeMax < pg.PageSizeDefault {
-		return fmt.Errorf("command %q: paging page_size_max (%d) must be >= page_size_default (%d)", command, pg.PageSizeMax, pg.PageSizeDefault)
-	}
-	if pg.PageIndexParam == "" {
-		return fmt.Errorf("command %q: paging requires page_index_param", command)
-	}
-	if pg.PageSizeParam == "" {
-		return fmt.Errorf("command %q: paging requires page_size_param", command)
+	if pg.PagingStrategy == spec.PagingStrategyPageIndex || pg.PagingStrategy == spec.PagingStrategyPageHeader {
+		if pg.PageSizeDefault <= 0 {
+			return fmt.Errorf("command %q: paging requires page_size_default > 0", command)
+		}
+		if pg.PageSizeMax < pg.PageSizeDefault {
+			return fmt.Errorf("command %q: paging page_size_max (%d) must be >= page_size_default (%d)", command, pg.PageSizeMax, pg.PageSizeDefault)
+		}
+		if pg.PageIndexParam == "" {
+			return fmt.Errorf("command %q: paging requires page_index_param", command)
+		}
+		if pg.PageSizeParam == "" {
+			return fmt.Errorf("command %q: paging requires page_size_param", command)
+		}
 	}
 	if pg.PagingStrategy == spec.PagingStrategyPageIndex && pg.TotalExpr == "" {
 		return fmt.Errorf("command %q: page_index paging requires total_expr", command)
