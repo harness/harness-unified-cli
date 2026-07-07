@@ -95,16 +95,18 @@ func Exists(fv map[string]any, key string) bool {
 }
 
 // NormalizeFileBody validates and normalizes a file body string based on the effective content type.
+// ct should already be resolved (e.g. via resolveContentType) before calling; empty ct defaults to application/json.
 //
 // For application/yaml endpoints: the body must NOT be JSON (first non-whitespace char is '{').
-// For application/json endpoints (ct == "" or "application/json"): JSON is passed through after
-// validation; YAML is parsed and re-encoded as JSON.
+// For JSON/merge-patch endpoints: JSON is passed through after validation; YAML is parsed and re-encoded as JSON.
 //
 // Returns the normalized body string and the resolved content type, or an error.
-func NormalizeFileBody(body string, ct string, filePath string) (string, string, error) {
+func NormalizeFileBody(body, ct, filePath string) (string, string, error) {
 	switch ct {
-	case "", "application/json":
+	case "":
 		ct = "application/json"
+	case "application/json", "application/merge-patch+json":
+		// ok, pass through as declared
 	case "application/yaml":
 		// ok
 	default:

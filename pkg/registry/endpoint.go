@@ -80,7 +80,7 @@ func callEndpointFull(ctx *cmdctx.Ctx, ep *spec.EndpointSpec, extraQueryParams m
 		if err != nil {
 			return nil, nil, err
 		}
-		body, ct, err := cmdctx.NormalizeFileBody(body, ep.ContentType, cmdctx.GetString(ctx.FlagValues, "file"))
+		body, ct, err := cmdctx.NormalizeFileBody(body, resolveContentType(ep, method), cmdctx.GetString(ctx.FlagValues, "file"))
 		if err != nil {
 			return nil, nil, err
 		}
@@ -94,15 +94,27 @@ func callEndpointFull(ctx *cmdctx.Ctx, ep *spec.EndpointSpec, extraQueryParams m
 		}); err != nil {
 			return nil, nil, err
 		}
-		if method == "PUT" {
+		if method == "PUT" || method == "PATCH" {
 			if ep.UpdateBodyWrap != "" {
 				var parsed any
 				if err := json.Unmarshal([]byte(body), &parsed); err != nil {
 					return nil, nil, fmt.Errorf("parsing -f body: %w", err)
 				}
-				return c.Put(path, qp, map[string]any{ep.UpdateBodyWrap: parsed})
+				return c.DoRequest(client.Request{
+					Method:          method,
+					Path:            path,
+					QueryParams:     qp,
+					Body:            map[string]any{ep.UpdateBodyWrap: parsed},
+					BodyContentType: ct,
+				})
 			}
-			return c.PutRaw(path, qp, body, ct)
+			return c.DoRequest(client.Request{
+				Method:          method,
+				Path:            path,
+				QueryParams:     qp,
+				Body:            body,
+				BodyContentType: ct,
+			})
 		}
 		if ep.CreateBodyWrap != "" || len(ep.CreateBodyInit) > 0 {
 			var parsed map[string]any
@@ -133,11 +145,15 @@ func callEndpointFull(ctx *cmdctx.Ctx, ep *spec.EndpointSpec, extraQueryParams m
 
 	// Priority 2: update/create strategies — each owns its own query params.
 	if ep.UpdateStrategy == spec.UpdateStrategyGetThenPut && method == "PUT" {
-		result, err := runGetThenPut(ctx, ep, c, path)
+		result, err := runGetThenUpdate(ctx, ep, c, path, method)
 		return result, nil, err
 	}
 	if ep.UpdateStrategy == spec.UpdateStrategyGetThenPutKV && method == "PUT" {
 		result, err := runGetThenPutKV(ctx, ep, c, path)
+		return result, nil, err
+	}
+	if ep.UpdateStrategy == spec.UpdateStrategyGetThenPatch && method == "PATCH" {
+		result, err := runGetThenUpdate(ctx, ep, c, path, method)
 		return result, nil, err
 	}
 	if ep.CreateStrategy == spec.CreateStrategySetFields && method == "POST" {
@@ -533,13 +549,29 @@ func setDotPath(m map[string]any, path string, val any) {
 	setDotPath(child, parts[1], val)
 }
 
-// runGetThenPut implements the "get-then-put" update strategy:
+// resolveContentType returns the Content-Type for a request: ep.ContentType if set,
+// otherwise a method-based default (PATCH → merge-patch+json, POST/PUT → application/json).
+func resolveContentType(ep *spec.EndpointSpec, method string) string {
+	if ep.ContentType != "" {
+		return ep.ContentType
+	}
+	switch method {
+	case "PATCH":
+		return "application/merge-patch+json"
+	case "POST", "PUT":
+		return "application/json"
+	default:
+		return ""
+	}
+}
+
+// runGetThenUpdate implements the "get-then-put" and "get-then-patch" update strategies:
 //  1. GET the resource using get_query_params (falls back to query_params)
 //  2. Extract ep.UpdateBodyPick subtree from the response
 //  3. Apply --set/--del mutations using noun field paths
-//  4. Re-wrap under ep.UpdateBodyWrap key
-//  5. PUT the result
-func runGetThenPut(ctx *cmdctx.Ctx, ep *spec.EndpointSpec, c *client.Client, path string) (any, error) {
+//  4. Re-wrap under ep.UpdateBodyWrap key (if set)
+//  5. PUT or PATCH the result (method determines verb and Content-Type)
+func runGetThenUpdate(ctx *cmdctx.Ctx, ep *spec.EndpointSpec, c *client.Client, path, method string) (any, error) {
 	exprEnv := exprenv.Make(ctx)
 
 	getPath := path
@@ -547,14 +579,14 @@ func runGetThenPut(ctx *cmdctx.Ctx, ep *spec.EndpointSpec, c *client.Client, pat
 		var err error
 		getPath, err = exprenv.ResolvePath(exprEnv, ep.GetPath)
 		if err != nil {
-			return nil, fmt.Errorf("get-then-put: resolving get_path %q: %w", ep.GetPath, err)
+			return nil, fmt.Errorf("get-then-%s: resolving get_path %q: %w", strings.ToLower(method), ep.GetPath, err)
 		}
 	}
 
 	getQP := evalQueryParams(ctx, firstNonEmptyMap(ep.GetQueryParams, ep.QueryParams), true)
 	getResult, _, err := c.Get(getPath, getQP)
 	if err != nil {
-		return nil, fmt.Errorf("get-then-put: GET failed: %w", err)
+		return nil, fmt.Errorf("get-then-%s: GET failed: %w", strings.ToLower(method), err)
 	}
 
 	// Extract the mutable subtree from the root GET response.
@@ -564,7 +596,7 @@ func runGetThenPut(ctx *cmdctx.Ctx, ep *spec.EndpointSpec, c *client.Client, pat
 	if ep.UpdateBodyPick != "" {
 		picked, ok := exprenv.EvalExprAny(exprenv.WithIt(exprEnv, getResult), ep.UpdateBodyPick)
 		if !ok {
-			return nil, fmt.Errorf("get-then-put: update_body_pick %q did not resolve", ep.UpdateBodyPick)
+			return nil, fmt.Errorf("get-then-%s: update_body_pick %q did not resolve", strings.ToLower(method), ep.UpdateBodyPick)
 		}
 		item = picked
 	} else if ep.ItemExpr != "" && ep.ItemExpr != "it" {
@@ -576,11 +608,11 @@ func runGetThenPut(ctx *cmdctx.Ctx, ep *spec.EndpointSpec, c *client.Client, pat
 	// Round-trip through JSON to get a map[string]any we can mutate.
 	b, err := json.Marshal(item)
 	if err != nil {
-		return nil, fmt.Errorf("get-then-put: marshaling picked item: %w", err)
+		return nil, fmt.Errorf("get-then-%s: marshaling picked item: %w", strings.ToLower(method), err)
 	}
 	var mutable map[string]any
 	if err := json.Unmarshal(b, &mutable); err != nil {
-		return nil, fmt.Errorf("get-then-put: unmarshaling picked item: %w", err)
+		return nil, fmt.Errorf("get-then-%s: unmarshaling picked item: %w", strings.ToLower(method), err)
 	}
 
 	// Build a fieldID→FieldDef map from the noun's mutable fields for --set/--del resolution.
@@ -593,13 +625,18 @@ func runGetThenPut(ctx *cmdctx.Ctx, ep *spec.EndpointSpec, c *client.Client, pat
 		return nil, err
 	}
 
-	// Re-wrap and PUT.
-	var putBody any = mutable
+	var updateBody any = mutable
 	if ep.UpdateBodyWrap != "" {
-		putBody = map[string]any{ep.UpdateBodyWrap: mutable}
+		updateBody = map[string]any{ep.UpdateBodyWrap: mutable}
 	}
-	putQP := evalQueryParams(ctx, ep.QueryParams, true)
-	result, _, err := c.Put(path, putQP, putBody)
+	updateQP := evalQueryParams(ctx, ep.QueryParams, true)
+	result, _, err := c.DoRequest(client.Request{
+		Method:          method,
+		Path:            path,
+		QueryParams:     updateQP,
+		Body:            updateBody,
+		BodyContentType: resolveContentType(ep, method),
+	})
 	return result, err
 }
 

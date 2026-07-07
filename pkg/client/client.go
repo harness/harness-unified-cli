@@ -150,6 +150,16 @@ func (c *Client) PutRaw(path string, queryParams map[string]string, body, conten
 	return c.DoRequest(Request{Method: "PUT", Path: path, QueryParams: queryParams, Body: body, BodyContentType: contentType})
 }
 
+// Patch performs a PATCH request with an optional JSON body.
+func (c *Client) Patch(path string, queryParams map[string]string, body any) (any, http.Header, error) {
+	return c.do("PATCH", path, queryParams, body)
+}
+
+// PatchRaw performs a PATCH request with a raw string body and explicit Content-Type.
+func (c *Client) PatchRaw(path string, queryParams map[string]string, body, contentType string) (any, http.Header, error) {
+	return c.DoRequest(Request{Method: "PATCH", Path: path, QueryParams: queryParams, Body: body, BodyContentType: contentType})
+}
+
 // DoRequest executes a Request and returns the decoded JSON response body, response headers, and any error.
 // If Body is a string, it is sent as-is using BodyContentType. Otherwise Body is JSON-marshaled and
 // BodyContentType defaults to "application/json". Extra per-request headers may be set via Headers.
