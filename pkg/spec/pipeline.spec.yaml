@@ -965,6 +965,7 @@ commands:
     short: Approve a waiting Harness approval instance
     confirm_mode: prompt
     id_label: <approvalInstanceId>
+    fields_noun: approval_instance
     handler_type: endpoint
     flags:
       - name: comment
@@ -976,7 +977,6 @@ commands:
       method: POST
       path: /pipeline/api/approvals/{{ctx.id}}/harness/activity
       item_expr: it.data
-      fields_noun: approval_instance
       text_header: "\nApproved approval {{ctx.id}}\n"
       body_fn: approval_approve_body
 
@@ -987,6 +987,7 @@ commands:
     short: Reject a waiting Harness approval instance
     confirm_mode: prompt
     id_label: <approvalInstanceId>
+    fields_noun: approval_instance
     handler_type: endpoint
     flags:
       - name: comment
@@ -995,7 +996,6 @@ commands:
       method: POST
       path: /pipeline/api/approvals/{{ctx.id}}/harness/activity
       item_expr: it.data
-      fields_noun: approval_instance
       text_header: "\nRejected approval {{ctx.id}}\n"
       body_params:
         action: '"REJECT"'
