@@ -1104,10 +1104,29 @@ func authTelemetryFields(a *auth.ResolvedAuth) (accountID, userDomain, tokenKind
 	return
 }
 
+// telemetryAuth returns ctx.Auth, best-effort-resolving it first when the
+// command declared no_auth: true and skipped auth resolution. Errors are
+// ignored — this is telemetry only, and no_auth commands must keep working
+// when the user isn't logged in.
+func telemetryAuth(cs *spec.CommandSpec, ctx *cmdctx.Ctx) *auth.ResolvedAuth {
+	if ctx.Auth != nil || !cs.NoAuth {
+		return ctx.Auth
+	}
+	profileFlag, _ := ctx.FlagValues["profile"].(string)
+	resolved, err := auth.Resolve(profileFlag)
+	if err != nil {
+		return nil
+	}
+	return resolved
+}
+
 func (r *Registry) emitIntent(cmd *cobra.Command, cs *spec.CommandSpec, ctx *cmdctx.Ctx) {
+	if telemetry.Disabled() {
+		return
+	}
 	var flags []string
 	cmd.Flags().Visit(func(f *pflag.Flag) { flags = append(flags, f.Name) })
-	accountID, userDomain, tokenKind, authSource := authTelemetryFields(ctx.Auth)
+	accountID, userDomain, tokenKind, authSource := authTelemetryFields(telemetryAuth(cs, ctx))
 	telemetry.RecordIntent(telemetry.CommandIntent{
 		Verb:       cs.Verb,
 		Noun:       cs.FullNoun(),
@@ -1123,7 +1142,10 @@ func (r *Registry) emitIntent(cmd *cobra.Command, cs *spec.CommandSpec, ctx *cmd
 }
 
 func (r *Registry) emitError(cs *spec.CommandSpec, ctx *cmdctx.Ctx, err error, start time.Time) {
-	accountID, userDomain, tokenKind, authSource := authTelemetryFields(ctx.Auth)
+	if telemetry.Disabled() {
+		return
+	}
+	accountID, userDomain, tokenKind, authSource := authTelemetryFields(telemetryAuth(cs, ctx))
 	telemetry.RecordError(telemetry.CommandError{
 		Verb:       cs.Verb,
 		Noun:       cs.FullNoun(),

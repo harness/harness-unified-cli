@@ -30,7 +30,6 @@ import (
 	"runtime"
 	"strings"
 	"syscall"
-	"time"
 
 	"golang.org/x/term"
 
@@ -74,8 +73,7 @@ type Env struct {
 	// See [DetectAgent].
 	AIAgent string
 
-	Locale   string // from LANG/LC_ALL/LC_CTYPE, e.g. "en_US.UTF-8"
-	Timezone string // IANA name from the local timezone database, e.g. "America/Los_Angeles"
+	Locale string // from LANG/LC_ALL/LC_CTYPE, e.g. "en_US.UTF-8"
 }
 
 // NewEnv captures the current runtime environment. Call once at startup.
@@ -91,7 +89,6 @@ func NewEnv() Env {
 		PipelineID:          pipelineID,
 		AIAgent:             DetectAgent(),
 		Locale:              locale(),
-		Timezone:            timezone(),
 	}
 }
 
@@ -121,12 +118,6 @@ func locale() string {
 		return ""
 	}
 	return ""
-}
-
-// timezone returns the IANA name of the local timezone (e.g.
-// "America/Los_Angeles"), resolved from the system timezone database.
-func timezone() string {
-	return time.Local.String()
 }
 
 // CommandIntent is emitted once per invocation before the command executes.
@@ -206,6 +197,7 @@ func SetDisabled(v bool) {
 func Init() (flush func()) {
 	cfg, err := config.LoadConfig()
 	if err != nil || cfg.DisableTelemetry {
+		SetDisabled(true)
 		return func() {}
 	}
 	seg := newSegmentBackend(config.GetOrCreateTelemetryID())
@@ -216,9 +208,14 @@ func Init() (flush func()) {
 	return func() { seg.Close() }
 }
 
-// RecordIntent emits a [CommandIntent]. No-op when no backend is set,
-// HARNESS_NO_TELEMETRY=1, or the build is a dev build.
+// RecordIntent emits a [CommandIntent]. No-op when the user has opted out
+// (disable_telemetry or HARNESS_NO_TELEMETRY=1) — in that case it returns
+// before even logging the debug line. When opted in but no backend is set
+// (dev build, no write key), it still logs for debugging but sends nothing.
 func RecordIntent(e CommandIntent) {
+	if Disabled() {
+		return
+	}
 	hlog.Debug("telemetry: intent",
 		"verb", e.Verb, "noun", e.Noun, "module", e.Module,
 		"flags", e.FlagsSet, "account", e.AccountID, "domain", e.UserDomain,
@@ -226,8 +223,9 @@ func RecordIntent(e CommandIntent) {
 		"run_id", e.RunID, "os", e.Env.OS, "arch", e.Env.Arch,
 		"version", e.Env.Version, "is_tty", e.Env.IsTTY,
 		"is_pipeline", e.Env.IsPipelineExecution,
-		"aiagent", e.Env.AIAgent, "locale", e.Env.Locale, "timezone", e.Env.Timezone)
-	if !shouldRecord(e.Env) {
+		"aiagent", e.Env.AIAgent, "locale", e.Env.Locale,
+		"backend", activeBackend != nil)
+	if activeBackend == nil {
 		return
 	}
 	activeBackend.RecordIntent(e)
@@ -235,12 +233,16 @@ func RecordIntent(e CommandIntent) {
 
 // RecordError emits a [CommandError]. Same gating as [RecordIntent].
 func RecordError(e CommandError) {
+	if Disabled() {
+		return
+	}
 	hlog.Debug("telemetry: error",
 		"verb", e.Verb, "noun", e.Noun, "module", e.Module,
 		"category", e.Category, "duration_ms", e.DurationMs,
 		"account", e.AccountID, "token_kind", e.TokenKind,
-		"auth_source", e.AuthSource, "run_id", e.RunID)
-	if !shouldRecord(e.Env) {
+		"auth_source", e.AuthSource, "run_id", e.RunID,
+		"backend", activeBackend != nil)
+	if activeBackend == nil {
 		return
 	}
 	activeBackend.RecordError(e)
@@ -274,15 +276,16 @@ func UserDomainFromEmail(email string) string {
 	return ""
 }
 
-func shouldRecord(env Env) bool {
-	if activeBackend == nil {
-		return false
-	}
+// Disabled reports whether the user has opted out of telemetry, via either
+// disable_telemetry in config.yaml or HARNESS_NO_TELEMETRY=1. Distinct from
+// having no active backend (e.g. a dev build with no write key) — that case
+// still logs debug output, whereas an explicit opt-out logs nothing.
+func Disabled() bool {
 	if disabled {
-		return false
+		return true
 	}
 	if os.Getenv(hbase.EnvNoTelemetry) == "1" {
-		return false
+		return true
 	}
-	return true
+	return false
 }
