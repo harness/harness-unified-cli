@@ -140,11 +140,38 @@ nouns:
       - id: name
         expr: it.name
       - id: type
-        expr: it.templateEntityType
+        expr: it.entity_type
       - id: version
-        expr: it.versionLabel
+        expr: it.version_label
       - id: stable
-        expr: it.stableTemplate
+        expr: it.stable_template
+      - id: scope
+        expr: it.scope
+      - id: updated
+        expr: epochMs(it.updated)
+      - id: yaml
+        expr: it.yaml
+        field_type: yaml
+
+  - noun: template_version
+    short_desc: A specific version of a reusable pipeline template.
+    noun_aliases: [template_versions]
+    multi_level: true
+    fields:
+      - id: identifier
+        expr: it.identifier
+      - id: name
+        expr: it.name
+      - id: type
+        expr: it.entity_type
+      - id: version
+        expr: it.version_label
+      - id: stable
+        expr: it.stable_template
+      - id: scope
+        expr: it.scope
+      - id: updated
+        expr: epochMs(it.updated)
       - id: yaml
         expr: it.yaml
         field_type: yaml
@@ -943,51 +970,43 @@ commands:
   - command: list template
     verb: list
     noun: template
-    short: List templates in a project
+    short: List templates (defaults to project scope; use --level for account/org)
     handler_type: endpoint
     flags:
       - name: search
         description: Filter templates by name or keyword
       - name: list-type
-        default: LastUpdated
-        description: "Template list type: Stable, LastUpdated, All"
+        default: LAST_UPDATES_TEMPLATE
+        description: "Template list type: STABLE_TEMPLATE, LAST_UPDATES_TEMPLATE, ALL"
     endpoint:
-      method: POST
-      path: /template/api/templates/list
-      items_expr: it.data.content
+      path: /v1{{scopePath(auth)}}/templates
+      items_expr: it
       get_id_expr: it.identifier
       completion:
         id_expr: it.identifier
         name_expr: it.name
       query_params:
-        searchTerm: flags.search
-        templateListType: flags["list-type"]
-      body_params:
-        filterType: '"Template"'
+        search_term: flags.search
+        type: flags["list-type"]
       paging:
-        paging_strategy: page_index
+        paging_strategy: page_header
         countable: true
         page_index_param: page
-        page_size_param: size
-        page_size_default: 25
+        page_size_param: limit
+        page_size_default: 30
         page_size_max: 100
-        total_expr: it.data.totalElements
       columns: [identifier, name, type, version, stable]
 
   - command: get template
     verb: get
     noun: template
-    short: Get a template by identifier
+    short: Get a template's stable version by identifier
     completion_noun: template
     handler_type: endpoint
-    flags:
-      - name: version
-        description: Template version label (defaults to stable)
     endpoint:
-      path: /template/api/templates/{{ctx.id}}
-      item_expr: it.data
-      query_params:
-        versionLabel: flags.version
+      path: /v1{{scopePath(auth)}}/templates/{{ctx.id}}
+      item_expr: it.template
+      yaml_pick_expr: it.template
 
   - command: create template
     verb: create
@@ -996,46 +1015,113 @@ commands:
     handler_type: endpoint
     endpoint:
       method: POST
-      path: /template/api/templates
+      path: /v1{{scopePath(auth)}}/templates
       file_body: required
+      file_body_wrap: template_yaml
       content_type: application/yaml
-      item_expr: it.data
-      text_header: "\nCreated template in project [{{auth.project}}]\n"
+      item_expr: it
+      fields_subset: [identifier, name, type, version, stable, scope]
+      text_header: "\nCreated template\n"
 
-  - command: update template
-    verb: update
-    noun: template
-    short: Update a template version (-f template.yaml)
+  - command: list template_version
+    verb: list
+    noun: template_version
+    short: List all versions of a template
     completion_noun: template
+    requires_parentid: true
+    parentid_label: template
     handler_type: endpoint
-    flags:
-      - name: version
-        required: true
-        description: Template version label to update
+    endpoint:
+      path: /v1{{scopePath(auth)}}/templates
+      items_expr: it
+      get_id_expr: parentId + "/" + it.version_label
+      completion:
+        id_expr: it.version_label
+        name_expr: it.version_label
+      query_params:
+        identifiers: ctx.parentId
+        type: '"ALL"'
+      paging:
+        paging_strategy: page_header
+        countable: true
+        page_index_param: page
+        page_size_param: limit
+        page_size_default: 30
+        page_size_max: 100
+      columns: [version, stable, type, updated]
+
+  - command: get template_version
+    verb: get
+    noun: template_version
+    short: Get a specific version of a template
+    id_parts: 2
+    id_label: "<template/version>"
+    completion_seq:
+      - completion_noun: template
+      - completion_noun: template_version
+        keep_order: true
+    handler_type: endpoint
+    endpoint:
+      path: /v1{{scopePath(auth)}}/templates/{{ctx.idParts[0]}}/versions/{{lastPart(ctx.id)}}
+      item_expr: it.template
+      yaml_pick_expr: it.template
+
+  - command: update template_version
+    verb: update
+    noun: template_version
+    short: Update a template version (-f template.yaml)
+    id_parts: 2
+    id_label: "<template/version>"
+    completion_seq:
+      - completion_noun: template
+      - completion_noun: template_version
+        keep_order: true
+    handler_type: endpoint
     endpoint:
       method: PUT
-      path: /template/api/templates/update/{{ctx.id}}/{{flags.version}}
+      path: /v1{{scopePath(auth)}}/templates/{{ctx.idParts[0]}}/versions/{{lastPart(ctx.id)}}
       file_body: required
+      file_body_wrap: template_yaml
       content_type: application/yaml
       no_fields: true
-      text_header: "\nUpdated template {{ctx.id}} ({{flags.version}})\n"
+      text_header: "\nUpdated template {{ctx.idParts[0]}} version {{lastPart(ctx.id)}}\n"
 
-  - command: delete template
+  - command: delete template_version
     verb: delete
-    noun: template
+    noun: template_version
     confirm_mode: prompt
-    short: Delete a template version by identifier
-    completion_noun: template
+    short: Delete a template version
+    id_parts: 2
+    id_label: "<template/version>"
+    completion_seq:
+      - completion_noun: template
+      - completion_noun: template_version
+        keep_order: true
     handler_type: endpoint
-    flags:
-      - name: version
-        required: true
-        description: Template version label to delete
     endpoint:
       method: DELETE
-      path: /template/api/templates/{{ctx.id}}/{{flags.version}}
+      path: /v1{{scopePath(auth)}}/templates/{{ctx.idParts[0]}}/versions/{{lastPart(ctx.id)}}
       item_expr: it
-      text_header: "\nDeleted template {{ctx.id}} ({{flags.version}})\n"
+      text_header: "\nDeleted template {{ctx.idParts[0]}} version {{lastPart(ctx.id)}}\n"
+
+  - command: execute template_version:set-stable
+    verb: execute
+    noun: template_version
+    noun_variant: set-stable
+    short: Mark a template version as the stable version
+    id_parts: 2
+    id_label: "<template/version>"
+    completion_seq:
+      - completion_noun: template
+      - completion_noun: template_version
+        keep_order: true
+    handler_type: endpoint
+    endpoint:
+      method: PUT
+      path: /v1{{scopePath(auth)}}/templates/{{ctx.idParts[0]}}/versions/{{lastPart(ctx.id)}}/stable
+      no_fields: true
+      body_params: {}
+      text_header: "\nSet template {{ctx.idParts[0]}} version {{lastPart(ctx.id)}} as stable\n"
 
   - command: list pipeline_v1
     verb: list

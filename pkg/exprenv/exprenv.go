@@ -93,6 +93,7 @@ func Make(ctx *cmdctx.Ctx) map[string]any {
 		"spaceAfter":            exprfuncs.SpaceAfter,
 		"duration":              exprfuncs.Duration,
 		"harScopeUrl":           exprfuncs.HarScopeUrl,
+		"scopePath":             exprfuncs.HarScopeUrl,
 		"epochMs":               exprfuncs.EpochMs,
 		"parseDateMs":           exprfuncs.ParseDateMs,
 		"jsonArray":             exprfuncs.JsonArray,

@@ -323,6 +323,10 @@ type EndpointSpec struct {
 	// ContentType overrides the default Content-Type header. Only used when
 	// FileBody is set; defaults to "application/json".
 	ContentType string `yaml:"content_type,omitempty"`
+	// FileBodyWrap wraps the raw -f file contents as a string value under this key,
+	// sent as an application/json object. Used by APIs that expect
+	// { "<key>": "<yaml string>" } (e.g. the v1 template API's template_yaml envelope).
+	FileBodyWrap string `yaml:"file_body_wrap,omitempty"`
 	// TextFormatter names a registered TextFormatterFn used when --format text.
 	TextFormatter string `yaml:"text_formatter,omitempty"`
 	// TextHeader and TextFooter are optional {{expr}}-interpolated strings printed

@@ -95,6 +95,15 @@ func callEndpointFull(ctx *cmdctx.Ctx, ep *spec.EndpointSpec, extraQueryParams m
 			return nil, nil, err
 		}
 		if method == "PUT" || method == "PATCH" {
+			if ep.FileBodyWrap != "" {
+				return c.DoRequest(client.Request{
+					Method:          method,
+					Path:            path,
+					QueryParams:     qp,
+					Body:            map[string]any{ep.FileBodyWrap: body},
+					BodyContentType: "application/json",
+				})
+			}
 			if ep.UpdateBodyWrap != "" {
 				var parsed any
 				if err := json.Unmarshal([]byte(body), &parsed); err != nil {
@@ -115,6 +124,9 @@ func callEndpointFull(ctx *cmdctx.Ctx, ep *spec.EndpointSpec, extraQueryParams m
 				Body:            body,
 				BodyContentType: ct,
 			})
+		}
+		if ep.FileBodyWrap != "" {
+			return c.Post(path, qp, map[string]any{ep.FileBodyWrap: body})
 		}
 		if ep.CreateBodyWrap != "" || len(ep.CreateBodyInit) > 0 {
 			var parsed map[string]any
@@ -471,7 +483,7 @@ func resolveBody(ep *spec.EndpointSpec, ctx *cmdctx.Ctx) (any, error) {
 		hlog.Debug("resolved body_fn", "fn", ep.BodyFn)
 		return bf(ctx)
 	}
-	if len(ep.BodyParams) > 0 {
+	if ep.BodyParams != nil {
 		return evalBodyParams(ctx, ep.BodyParams), nil
 	}
 	return nil, nil
