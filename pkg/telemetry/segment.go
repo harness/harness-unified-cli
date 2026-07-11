@@ -4,6 +4,8 @@
 package telemetry
 
 import (
+	"time"
+
 	analytics "github.com/segmentio/analytics-go/v3"
 )
 
@@ -31,8 +33,20 @@ func newSegmentBackend(anonymousID string) *SegmentBackend {
 	if segmentWriteKey == "" {
 		return nil
 	}
+	// BatchSize 1 makes the client's background sender dispatch each event
+	// as soon as it's enqueued, instead of waiting for Interval/Close to
+	// flush a batch — a CLI invocation only ever emits 1-2 events and exits
+	// long before the default interval would fire. Enqueue itself still
+	// just pushes onto a channel, so callers never block on this.
+	client, err := analytics.NewWithConfig(segmentWriteKey, analytics.Config{
+		BatchSize: 1,
+		Interval:  50 * time.Millisecond,
+	})
+	if err != nil {
+		return nil
+	}
 	return &SegmentBackend{
-		client:      analytics.New(segmentWriteKey),
+		client:      client,
 		anonymousID: anonymousID,
 	}
 }
