@@ -188,6 +188,7 @@ main() {
 
     # install binaries
     download_and_install "$version" "$platform" "$INSTALL_DIR"
+    HARNESS_INSTALL_TYPE=script "$INSTALL_DIR/harness" --post-install >/dev/null 2>&1 || true
 
     local patched_rc=""
 

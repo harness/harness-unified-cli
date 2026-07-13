@@ -48,6 +48,11 @@ const (
 	// EnvNoTelemetry disables all usage telemetry when set to "1".
 	EnvNoTelemetry = "HARNESS_NO_TELEMETRY"
 
+	// EnvInstallType identifies how the CLI was installed (e.g. "script"),
+	// set by the installer before invoking --post-install. See
+	// [telemetry.ResolveInstallType] for the whitelist and default.
+	EnvInstallType = "HARNESS_INSTALL_TYPE"
+
 	// EnvLogFile redirects all log output to the specified file path.
 	EnvLogFile = "HARNESS_CLI_LOGFILE"
 

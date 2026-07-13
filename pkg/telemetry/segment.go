@@ -25,6 +25,7 @@ var segmentWriteKey string
 const (
 	eventCommandExecuted = "cli_command_executed"
 	eventCommandFailed   = "cli_command_failed"
+	eventInstalled       = "cli_installed"
 
 	segmentTrackURL = "https://api.segment.io/v1/track"
 
@@ -152,6 +153,20 @@ func (s *SegmentBackend) RecordIntent(e CommandIntent) {
 		"is_dev":      e.Env.IsDev,
 		"aiagent":     e.Env.AIAgent,
 		"locale":      e.Env.Locale,
+	})
+}
+
+// RecordInstall sends a "CLI Installed" track event.
+func (s *SegmentBackend) RecordInstall(e InstallEvent) {
+	s.send(eventInstalled, map[string]any{
+		"run_id":       e.RunID,
+		"install_type": e.InstallType,
+		"os":           e.Env.OS,
+		"arch":         e.Env.Arch,
+		"version":      e.Env.Version,
+		"is_dev":       e.Env.IsDev,
+		"aiagent":      e.Env.AIAgent,
+		"locale":       e.Env.Locale,
 	})
 }
 

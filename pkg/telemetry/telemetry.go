@@ -170,10 +170,51 @@ type CommandError struct {
 	Env Env
 }
 
+// InstallEvent is emitted once by install.sh, via the hidden --post-install
+// flag, right after a fresh binary is placed on disk.
+type InstallEvent struct {
+	RunID string
+
+	// InstallType identifies how the CLI was installed. See
+	// [ResolveInstallType] for the whitelist and default.
+	InstallType string
+
+	Env Env
+}
+
+// InstallType values. Add new install methods (e.g. "brew") here as they're
+// wired up, and have the installer set [hbase.EnvInstallType] accordingly.
+const (
+	InstallTypeScript  = "script"
+	InstallTypeUnknown = "unknown"
+)
+
+// installTypeWhitelist is every value ResolveInstallType may return.
+var installTypeWhitelist = map[string]bool{
+	InstallTypeScript:  true,
+	InstallTypeUnknown: true,
+}
+
+// ResolveInstallType reads [hbase.EnvInstallType], defaulting to
+// [InstallTypeScript] when unset (install.sh is currently the only caller of
+// --post-install) and falling back to [InstallTypeUnknown] for any value
+// outside the whitelist.
+func ResolveInstallType() string {
+	v := os.Getenv(hbase.EnvInstallType)
+	if v == "" {
+		return InstallTypeScript
+	}
+	if !installTypeWhitelist[v] {
+		return InstallTypeUnknown
+	}
+	return v
+}
+
 // Backend is implemented by telemetry sinks (Segment, debug-stdout, etc.).
 type Backend interface {
 	RecordIntent(e CommandIntent)
 	RecordError(e CommandError)
+	RecordInstall(e InstallEvent)
 }
 
 var activeBackend Backend
@@ -246,6 +287,21 @@ func RecordError(e CommandError) {
 		return
 	}
 	activeBackend.RecordError(e)
+}
+
+// RecordInstall emits an [InstallEvent]. Same gating as [RecordIntent].
+func RecordInstall(e InstallEvent) {
+	if Disabled() {
+		return
+	}
+	hlog.Debug("telemetry: install",
+		"run_id", e.RunID, "install_type", e.InstallType,
+		"os", e.Env.OS, "arch", e.Env.Arch,
+		"version", e.Env.Version, "backend", activeBackend != nil)
+	if activeBackend == nil {
+		return
+	}
+	activeBackend.RecordInstall(e)
 }
 
 // ClassifyError maps err to an [ErrorCategory] without inspecting any

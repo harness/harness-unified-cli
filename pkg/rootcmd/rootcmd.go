@@ -32,6 +32,27 @@ func MaybeRunBackgroundUpdateCheck() {
 	}
 }
 
+// postInstallFlag is the hidden flag install.sh invokes right after placing a
+// fresh binary on disk, purely to fire a cli_installed telemetry event.
+const postInstallFlag = "--post-install"
+
+// MaybeRunPostInstall exits if this invocation is install.sh's post-install
+// telemetry ping. Respects the same opt-out as every other event.
+func MaybeRunPostInstall() {
+	for _, arg := range os.Args[1:] {
+		if arg == postInstallFlag {
+			flush := telemetry.Init()
+			telemetry.RecordInstall(telemetry.InstallEvent{
+				RunID:       hbase.RunID,
+				InstallType: telemetry.ResolveInstallType(),
+				Env:         telemetry.NewEnv(),
+			})
+			flush()
+			os.Exit(0)
+		}
+	}
+}
+
 // MaybeCheckSpecs runs spec validation and exits if HARNESS_CHECKSPECS=1, otherwise returns immediately.
 func MaybeCheckSpecs(reg *registry.Registry) {
 	if os.Getenv(hbase.EnvCheckSpecs) != "1" {
