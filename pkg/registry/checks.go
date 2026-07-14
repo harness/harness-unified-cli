@@ -209,6 +209,18 @@ func validateEndpointConstraints(cs *spec.CommandSpec) error {
 	if ep.ContentType != "" && ep.FileBody == spec.FileBodyNone {
 		return fmt.Errorf("command %q: content_type requires file_body to be set", cs.Command)
 	}
+	switch ep.FileBodyContentType {
+	case "", "application/json", "application/merge-patch+json", "application/yaml":
+		// valid
+	default:
+		return fmt.Errorf("command %q: invalid file_body_content_type %q (must be \"application/json\", \"application/merge-patch+json\", or \"application/yaml\")", cs.Command, ep.FileBodyContentType)
+	}
+	if ep.FileBodyContentType != "" && ep.FileBody == spec.FileBodyNone {
+		return fmt.Errorf("command %q: file_body_content_type requires file_body to be set", cs.Command)
+	}
+	if ep.FileBodyWrapAsString != "" && ep.FileBody == spec.FileBodyNone {
+		return fmt.Errorf("command %q: file_body_wrap_as_string requires file_body to be set", cs.Command)
+	}
 	return nil
 }
 

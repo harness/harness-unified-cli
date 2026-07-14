@@ -80,7 +80,7 @@ func callEndpointFull(ctx *cmdctx.Ctx, ep *spec.EndpointSpec, extraQueryParams m
 		if err != nil {
 			return nil, nil, err
 		}
-		body, ct, err := cmdctx.NormalizeFileBody(body, resolveContentType(ep, method), cmdctx.GetString(ctx.FlagValues, "file"))
+		body, ct, err := cmdctx.NormalizeFileBody(body, resolveFileBodyContentType(ep, method), cmdctx.GetString(ctx.FlagValues, "file"))
 		if err != nil {
 			return nil, nil, err
 		}
@@ -95,12 +95,12 @@ func callEndpointFull(ctx *cmdctx.Ctx, ep *spec.EndpointSpec, extraQueryParams m
 			return nil, nil, err
 		}
 		if method == "PUT" || method == "PATCH" {
-			if ep.FileBodyWrap != "" {
+			if ep.FileBodyWrapAsString != "" {
 				return c.DoRequest(client.Request{
 					Method:          method,
 					Path:            path,
 					QueryParams:     qp,
-					Body:            map[string]any{ep.FileBodyWrap: body},
+					Body:            map[string]any{ep.FileBodyWrapAsString: body},
 					BodyContentType: "application/json",
 				})
 			}
@@ -125,8 +125,8 @@ func callEndpointFull(ctx *cmdctx.Ctx, ep *spec.EndpointSpec, extraQueryParams m
 				BodyContentType: ct,
 			})
 		}
-		if ep.FileBodyWrap != "" {
-			return c.Post(path, qp, map[string]any{ep.FileBodyWrap: body})
+		if ep.FileBodyWrapAsString != "" {
+			return c.Post(path, qp, map[string]any{ep.FileBodyWrapAsString: body})
 		}
 		if ep.CreateBodyWrap != "" || len(ep.CreateBodyInit) > 0 {
 			var parsed map[string]any
@@ -559,6 +559,15 @@ func setDotPath(m map[string]any, path string, val any) {
 		m[parts[0]] = child
 	}
 	setDotPath(child, parts[1], val)
+}
+
+// resolveFileBodyContentType returns the format to validate/normalize the -f file
+// against: ep.FileBodyContentType if set, otherwise resolveContentType(ep, method).
+func resolveFileBodyContentType(ep *spec.EndpointSpec, method string) string {
+	if ep.FileBodyContentType != "" {
+		return ep.FileBodyContentType
+	}
+	return resolveContentType(ep, method)
 }
 
 // resolveContentType returns the Content-Type for a request: ep.ContentType if set,

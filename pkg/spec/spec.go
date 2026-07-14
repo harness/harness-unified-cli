@@ -320,13 +320,21 @@ type EndpointSpec struct {
 	// "optional": accepted, falls back to other strategy if omitted.
 	// "required": -f is mandatory; error if omitted.
 	FileBody string `yaml:"file_body,omitempty"`
-	// ContentType overrides the default Content-Type header. Only used when
-	// FileBody is set; defaults to "application/json".
+	// ContentType overrides the default wire Content-Type header for the request.
+	// Only used when FileBody is set; defaults to "application/json". Does NOT
+	// describe the format of the -f file itself — see FileBodyContentType for that.
 	ContentType string `yaml:"content_type,omitempty"`
-	// FileBodyWrap wraps the raw -f file contents as a string value under this key,
-	// sent as an application/json object. Used by APIs that expect
-	// { "<key>": "<yaml string>" } (e.g. the v1 template API's template_yaml envelope).
-	FileBodyWrap string `yaml:"file_body_wrap,omitempty"`
+	// FileBodyContentType overrides the format the -f file is validated/normalized
+	// against (independent of the wire ContentType). Only used when FileBody is set.
+	// Defaults to ContentType's value when unset. Required whenever FileBodyWrapAsString
+	// is set and the -f format differs from the wire Content-Type (e.g. a JSON API that
+	// wraps a raw YAML string).
+	FileBodyContentType string `yaml:"file_body_content_type,omitempty"`
+	// FileBodyWrapAsString embeds the raw, unparsed -f file contents as a string value
+	// under this key, sent as a JSON object on the wire regardless of ContentType or
+	// FileBodyContentType. Used by APIs that expect { "<key>": "<file contents as a
+	// string>" } (e.g. the v1 template API's template_yaml envelope).
+	FileBodyWrapAsString string `yaml:"file_body_wrap_as_string,omitempty"`
 	// TextFormatter names a registered TextFormatterFn used when --format text.
 	TextFormatter string `yaml:"text_formatter,omitempty"`
 	// TextHeader and TextFooter are optional {{expr}}-interpolated strings printed

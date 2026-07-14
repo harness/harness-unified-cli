@@ -1017,8 +1017,8 @@ commands:
       method: POST
       path: /v1{{scopePath(auth)}}/templates
       file_body: required
-      file_body_wrap: template_yaml
-      content_type: application/yaml
+      file_body_content_type: application/yaml
+      file_body_wrap_as_string: template_yaml
       item_expr: it
       fields_subset: [identifier, name, type, version, stable, scope]
       text_header: "\nCreated template\n"
@@ -1081,8 +1081,8 @@ commands:
       method: PUT
       path: /v1{{scopePath(auth)}}/templates/{{ctx.idParts[0]}}/versions/{{lastPart(ctx.id)}}
       file_body: required
-      file_body_wrap: template_yaml
-      content_type: application/yaml
+      file_body_content_type: application/yaml
+      file_body_wrap_as_string: template_yaml
       no_fields: true
       text_header: "\nUpdated template {{ctx.idParts[0]}} version {{lastPart(ctx.id)}}\n"
 
