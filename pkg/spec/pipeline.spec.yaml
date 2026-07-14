@@ -334,6 +334,10 @@ nouns:
 
   - noun: runtime_input_template
     short_desc: The set of runtime input placeholders (<+input>) that a pipeline requires at execution time.
+    fields:
+      - id: yaml
+        expr: it.inputSetTemplateYaml
+        field_type: yaml
 
   - noun: execution_result
     short_desc: Detailed execution outcome with stage and step results from a pipeline run.
@@ -1046,7 +1050,7 @@ commands:
     endpoint:
       method: POST
       path: /pipeline/api/inputSets/template
-      item_expr: it.data.inputSetTemplateYaml
+      item_expr: it.data
       query_params:
         pipelineIdentifier: ctx.id
 
