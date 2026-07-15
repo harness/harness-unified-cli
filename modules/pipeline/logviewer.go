@@ -405,7 +405,7 @@ func (m logViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, tea.Quit
 		case "s":
-			if m.state == lvStateReady && m.selectedUUID != "" {
+			if m.state == lvStateReady && m.activeTab == tabLogs && m.selectedUUID != "" {
 				node := m.selectedNode()
 				if node != nil {
 					if _, ok := m.logCache[node.UUID]; ok {
@@ -422,6 +422,10 @@ func (m logViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				node := m.selectedNode()
 				if node != nil {
 					delete(m.logCache, node.UUID)
+					if ss, ok := m.activeStreams[node.UUID]; ok {
+						ss.cancel()
+						delete(m.activeStreams, node.UUID)
+					}
 				}
 				return m, m.maybeLoadLog()
 			}
@@ -458,6 +462,13 @@ func (m logViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.clampLeftOffset()
 			}
 			return m, nil
+		case "tab":
+			if m.state == lvStateReady {
+				m.activeTab = (m.activeTab + 1) % rightTab(len(tabDefs))
+				m.syncViewportForTab()
+				return m, m.maybeLoadLog()
+			}
+			return m, nil
 		case "l", "d", "i", "o":
 			if m.state == lvStateReady {
 				for _, td := range tabDefs {
@@ -491,8 +502,7 @@ func (m logViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		for _, s := range msg.steps {
 			if i, ok := existing[s.UUID]; ok {
-				m.steps[i].Status = s.Status
-				m.steps[i].EndTs = s.EndTs
+				m.steps[i] = s
 			} else {
 				m.steps = append(m.steps, s)
 			}
@@ -545,7 +555,7 @@ func (m logViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = false
 		if msg.err != nil {
 			node := m.selectedNode()
-			if node != nil && node.UUID == msg.nodeUUID {
+			if node != nil && node.UUID == msg.nodeUUID && m.activeTab == tabLogs {
 				m.vp.SetContent(m.st.errStyle.Render("error: " + msg.err.Error()))
 				m.vp.GotoTop()
 			}
@@ -557,7 +567,7 @@ func (m logViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.logCache[msg.nodeUUID] = msg.content
 		}
 		node := m.selectedNode()
-		if node != nil && node.UUID == msg.nodeUUID {
+		if node != nil && node.UUID == msg.nodeUUID && m.activeTab == tabLogs {
 			m.vp.SetContent(m.logCache[msg.nodeUUID].rendered())
 			m.vp.GotoTop()
 		}
@@ -571,7 +581,7 @@ func (m logViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		node := m.selectedNode()
-		if node != nil && node.UUID == msg.nodeUUID && lc != nil {
+		if node != nil && node.UUID == msg.nodeUUID && lc != nil && m.activeTab == tabLogs {
 			atBottom := m.vp.AtBottom()
 			m.vp.SetContent(lc.rendered())
 			if atBottom {
@@ -862,7 +872,10 @@ func (m logViewModel) renderSplit(b *strings.Builder) {
 	}
 
 	// help line: left side is fixed, right side shows poll state / scroll %
-	helpLeft := "  ↑/↓ select · l/d/i/o tab · pgup/pgdn scroll · r refresh · s save · q quit"
+	helpLeft := "  ↑/↓ select · l/d/i/o/tab tab · pgup/pgdn scroll · r refresh · q quit"
+	if m.activeTab == tabLogs {
+		helpLeft = "  ↑/↓ select · l/d/i/o/tab tab · pgup/pgdn scroll · r refresh · s save · q quit"
+	}
 
 	var helpRight string
 	if !m.pipelineDone {
