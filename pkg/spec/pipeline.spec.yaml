@@ -635,8 +635,8 @@ commands:
     follow_fn: execute_v1_follow
     flags:
       - name: retry-stages
-        description: Stage identifier(s) to retry from (repeatable)
-        is_multi: true
+        description: Stage identifier(s) to retry from (comma-separated or JSON array)
+        is_array: true
       - name: only-failed-stages
         is_bool: true
         description: In a failed parallel group, run only the failed stages (default runs all)
