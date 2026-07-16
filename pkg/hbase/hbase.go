@@ -66,6 +66,14 @@ const (
 	EnvRegistryURL = "HARNESS_REGISTRY_URL"
 	EnvProfile     = "HARNESS_PROFILE"
 
+	// EnvSSOAuthServerURL overrides the SSO authorization server base URL
+	// (default https://id.harness.io).
+	EnvSSOAuthServerURL = "HARNESS_SSO_AUTH_SERVER_URL"
+
+	// EnvMCPBaseURL overrides the MCP gateway base URL
+	// (default https://mcp.harness.io/cli).
+	EnvMCPBaseURL = "HARNESS_MCP_BASE_URL"
+
 	// Defaults applied when env vars are not set.
 	DefaultAPIURL      = "https://app.harness.io"
 	DefaultRegistryURL = "https://pkg.harness.io"

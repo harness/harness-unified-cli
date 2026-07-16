@@ -22,6 +22,7 @@ import (
 	"github.com/harness/cli/pkg/cmdctx"
 	"github.com/harness/cli/pkg/config"
 	"github.com/harness/cli/pkg/console"
+	"github.com/harness/cli/pkg/hbase"
 	"github.com/harness/cli/pkg/hlog"
 )
 
@@ -71,7 +72,7 @@ func LoginSSOHandler(ctx *cmdctx.Ctx) error {
 		}
 	}
 
-	meta, err := auth.FetchAuthServerMeta(&http.Client{Timeout: 10 * time.Second}, auth.SSOAuthServerBase)
+	meta, err := auth.FetchAuthServerMeta(&http.Client{Timeout: 10 * time.Second}, auth.SSOAuthServerURL())
 	if err != nil {
 		return fmt.Errorf("SSO discovery failed: %w", err)
 	}
@@ -133,6 +134,9 @@ func LoginSSOHandler(ctx *cmdctx.Ctx) error {
 // All SSO traffic is routed through mcp.harness.io regardless of the per-cluster
 // subdomain in the JWT; the gateway handles cluster routing internally.
 func resolveAPIURL(token, accountID, subdomain string) (string, error) {
+	if v := os.Getenv(hbase.EnvMCPBaseURL); v != "" {
+		return v, nil
+	}
 	return mcpBaseURL, nil
 }
 

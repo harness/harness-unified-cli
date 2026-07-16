@@ -12,9 +12,11 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
+	"github.com/harness/cli/pkg/hbase"
 	"github.com/harness/cli/pkg/hlog"
 )
 
@@ -30,6 +32,15 @@ const (
 	ssoTokenTimeout        = 30 * time.Second
 	AccessTokenGracePeriod = 15 * time.Second
 )
+
+// SSOAuthServerURL returns the SSO authorization server base URL, honoring the
+// HARNESS_SSO_AUTH_SERVER_URL override and falling back to SSOAuthServerBase.
+func SSOAuthServerURL() string {
+	if v := os.Getenv(hbase.EnvSSOAuthServerURL); v != "" {
+		return v
+	}
+	return SSOAuthServerBase
+}
 
 // AuthServerMeta holds the endpoints from OAuth2 authorization server discovery.
 type AuthServerMeta struct {
@@ -81,7 +92,7 @@ func ExchangeCode(tokenEndpoint, clientID, code, verifier, redirectURI string) (
 // a new refresh token). If the server does not return a new refresh token, the
 // original is returned unchanged.
 func RefreshSSOToken(oldRefreshToken string) (accessToken, refreshToken string, err error) {
-	meta, err := FetchAuthServerMeta(&http.Client{Timeout: ssoDiscoverTimeout}, SSOAuthServerBase)
+	meta, err := FetchAuthServerMeta(&http.Client{Timeout: ssoDiscoverTimeout}, SSOAuthServerURL())
 	if err != nil {
 		return "", "", fmt.Errorf("SSO discovery failed: %w", err)
 	}
