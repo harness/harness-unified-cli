@@ -1,0 +1,210 @@
+spec_version: 1
+module_type: builtin
+module_desc: Harness GitOps — ArgoCD-backed agents, applications, clusters, and repositories
+help_text: |
+  ## GitOps (gitops)
+
+  The GitOps module manages Harness GitOps resources — the ArgoCD-backed
+  agents that run in your clusters and reconcile desired state from Git.
+
+  ### Domain Model
+
+  A **gitops-agent** is the component Harness installs into a Kubernetes
+  cluster to run GitOps reconciliation. Every agent has a scope (account, org,
+  or project), a type (MANAGED_ARGO_PROVIDER, HOSTED_ARGO_PROVIDER, or the
+  deprecated CONNECTED_ARGO_PROVIDER), a health status, and a version. Agents
+  with `upgrade_available: true` are running behind the latest released build.
+
+  Use `list gitops_agent` to see agents in the current scope and
+  `get gitops_agent <identifier>` for the full detail of a single agent.
+
+  Agents at account or org scope are reachable with `--level account` /
+  `--level org`.
+
+  A **gitops-application** is a deployed unit of desired state — an Argo CD
+  Application that reconciles manifests from a Git source into a target cluster
+  and namespace. Each application belongs to an agent, so its id is compound:
+  `<agent>/<app>`. Use `list gitops_application` to see all applications in the
+  current scope and `get gitops_application <agent>/<app>` for full detail.
+
+  ### Nouns
+
+  {{nouns}}
+
+nouns:
+  - noun: gitops_agent
+    short_desc: "Harness GitOps agents — ArgoCD reconcilers running in your clusters."
+    noun_aliases: [gitops_agents]
+    multi_level: true
+    fields:
+      - id: identifier
+        expr: it.identifier
+      - id: name
+        expr: it.name
+      - id: type
+        expr: it.type
+      - id: scope
+        expr: it.scope
+      - id: health
+        label: Health
+        expr: (it.health.harnessGitopsAgent ?? {})["status"]
+      - id: connected
+        label: Connected
+        expr: it.health.connectionStatus
+      - id: namespace
+        expr: it.metadata.namespace
+      - id: apps
+        label: Apps
+        expr: it.metadata.deployedApplicationCount
+        align: right
+      - id: version
+        expr: 'it.version == nil ? "" : it.version.major + "." + it.version.minor + "." + it.version.patch'
+      - id: upgrade_available
+        label: Upgrade
+        expr: it.upgradeAvailable
+      - id: description
+        expr: it.description
+        width_max: 60
+      - id: prefixed_identifier
+        label: Prefixed ID
+        expr: it.prefixedIdentifier
+      - id: last_heartbeat
+        expr: it.health.lastHeartbeat
+      - id: org_id
+        expr: it.orgIdentifier
+      - id: project_id
+        expr: it.projectIdentifier
+      - id: created
+        expr: epochMs(it.createdAt)
+      - id: updated
+        expr: epochMs(it.lastModifiedAt)
+
+  - noun: gitops_application
+    short_desc: "Harness GitOps applications — Argo CD apps reconciling Git state into a cluster."
+    noun_aliases: [gitops_applications]
+    multi_level: true
+    fields:
+      - id: name
+        expr: it.name
+      - id: agent
+        expr: it.agentIdentifier
+      - id: cluster
+        expr: it.clusterIdentifier
+      - id: repo
+        expr: it.repoIdentifier
+      - id: project
+        expr: it.app.spec.project
+      - id: namespace
+        expr: it.app.spec.destination.namespace
+      - id: sync_status
+        label: Sync
+        expr: it.app.status.sync.status
+      - id: health
+        label: Health
+        expr: it.app.status.health.status
+      - id: revision
+        expr: it.app.status.sync.revision
+      - id: repo_url
+        label: Repo URL
+        expr: it.app.spec.source.repoURL
+        width_max: 60
+      - id: path
+        expr: it.app.spec.source.path
+      - id: target_revision
+        expr: it.app.spec.source.targetRevision
+      - id: created
+        expr: it.createdAt
+      - id: updated
+        expr: it.lastModifiedAt
+
+commands:
+  - command: list gitops_agent
+    verb: list
+    noun: gitops_agent
+    short: "List GitOps agents in the current scope: harness list gitops_agent [--type ...] [--health-status ...]"
+    handler_type: endpoint
+    flags:
+      - name: search
+        description: Filter agents by name or identifier keyword
+      - name: type
+        description: "Filter by agent type"
+        completion_values: [MANAGED_ARGO_PROVIDER, HOSTED_ARGO_PROVIDER, CONNECTED_ARGO_PROVIDER]
+      - name: scope
+        description: "Filter by agent scope"
+        completion_values: [ACCOUNT, ORG, PROJECT]
+      - name: health-status
+        description: "Filter by health status"
+        completion_values: [HEALTHY, UNHEALTHY]
+      - name: connected-status
+        description: "Filter by connectivity status"
+        completion_values: [CONNECTED, DISCONNECTED]
+    endpoint:
+      path: /gitops/api/v1/agents
+      items_expr: it.content
+      get_id_expr: it.identifier
+      completion:
+        id_expr: it.identifier
+        name_expr: it.name
+      query_params:
+        searchTerm: flags.search
+        type: flags.type
+        scope: flags.scope
+        healthStatus: flags.health-status
+        connectedStatus: flags.connected-status
+      paging:
+        paging_strategy: page_index
+        countable: true
+        page_index_param: pageIndex
+        page_size_param: pageSize
+        page_size_default: 100
+        page_size_max: 100
+        total_expr: it.totalItems ?? 0
+      columns: [identifier, name, type, health, namespace, apps, version, upgrade_available]
+
+  - command: get gitops_agent
+    verb: get
+    noun: gitops_agent
+    short: "Get a single GitOps agent by identifier: harness get gitops_agent <identifier>"
+    handler_type: endpoint
+    endpoint:
+      path: /gitops/api/v1/agents/{{ctx.id}}
+      item_expr: it
+      fields_subset: [identifier, name, type, scope, health, connected, namespace, apps, version, upgrade_available, description, prefixed_identifier, last_heartbeat, org_id, project_id, created, updated]
+
+  - command: list gitops_application
+    verb: list
+    noun: gitops_application
+    short: "List GitOps applications in the current scope: harness list gitops_application [--search ...]"
+    handler_type: endpoint
+    flags:
+      - name: search
+        description: Filter applications by name or keyword
+    endpoint:
+      method: POST
+      path: /gitops/api/v1/applications
+      items_expr: it.content ?? []
+      get_id_expr: it.agentIdentifier + "/" + it.name
+      completion:
+        id_expr: it.agentIdentifier + "/" + it.name
+        name_expr: it.name
+      body_params:
+        accountIdentifier: auth.account
+        orgIdentifier: 'auth.org != "" ? auth.org : nil'
+        projectIdentifier: 'auth.project != "" ? auth.project : nil'
+        pageSize: "1000"
+        searchTerm: 'flags.search != "" ? flags.search : nil'
+      paging:
+        paging_strategy: flat_list
+      columns: [name, agent, sync_status, health, namespace, project]
+
+  - command: get gitops_application
+    verb: get
+    noun: gitops_application
+    short: "Get a single GitOps application: harness get gitops_application <agent/app>"
+    handler_type: endpoint
+    id_parts: 2
+    id_label: "<agent/app>"
+    endpoint:
+      path: /gitops/api/v1/agents/{{ctx.idParts[0]}}/applications/{{ctx.idParts[1]}}
+      item_expr: it
+      fields_subset: [name, agent, cluster, repo, project, namespace, sync_status, health, revision, repo_url, path, target_revision, created, updated]
