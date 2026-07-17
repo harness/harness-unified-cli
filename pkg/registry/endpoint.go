@@ -76,11 +76,40 @@ func callEndpointFull(ctx *cmdctx.Ctx, ep *spec.EndpointSpec, extraQueryParams m
 
 	// Priority 1: file body — wins over strategies when -f is provided.
 	if ep.FileBody != spec.FileBodyNone && cmdctx.GetString(ctx.FlagValues, "file") != "" {
-		body, err := cmdctx.SlurpInputFile(ctx.FlagValues)
+		rawBody, err := cmdctx.SlurpInputFile(ctx.FlagValues)
 		if err != nil {
 			return nil, nil, err
 		}
-		body, ct, err := cmdctx.NormalizeFileBody(body, resolveFileBodyContentType(ep, method), cmdctx.GetString(ctx.FlagValues, "file"))
+
+		// CD-style DTO envelope: the -f file may be given as the raw resource YAML
+		// (wrapped or flat) rather than the API's {identifier, ..., yaml: "..."} shape.
+		// Build the envelope here instead of going through the generic normalize/wrap path.
+		if ep.FileBodyYamlEnvelope != "" {
+			env, err := buildYamlEnvelope(ctx, ep.FileBodyYamlEnvelope, rawBody)
+			if err != nil {
+				return nil, nil, err
+			}
+			qp := evalQueryParams(ctx, ep.QueryParams, true, extraQueryParams)
+			ct := resolveContentType(ep, method)
+			if err := runEndpointValidators(ctx, ep, cmdctx.EndpointRequest{
+				Method:      method,
+				Path:        path,
+				QueryParams: qp,
+				Body:        env,
+				ContentType: ct,
+			}); err != nil {
+				return nil, nil, err
+			}
+			return c.DoRequest(client.Request{
+				Method:          method,
+				Path:            path,
+				QueryParams:     qp,
+				Body:            env,
+				BodyContentType: ct,
+			})
+		}
+
+		body, ct, err := cmdctx.NormalizeFileBody(rawBody, resolveFileBodyContentType(ep, method), cmdctx.GetString(ctx.FlagValues, "file"))
 		if err != nil {
 			return nil, nil, err
 		}
@@ -113,7 +142,7 @@ func callEndpointFull(ctx *cmdctx.Ctx, ep *spec.EndpointSpec, extraQueryParams m
 					Method:          method,
 					Path:            path,
 					QueryParams:     qp,
-					Body:            map[string]any{ep.UpdateBodyWrap: parsed},
+					Body:            map[string]any{ep.UpdateBodyWrap: unwrapIfAlreadyWrapped(parsed, ep.UpdateBodyWrap)},
 					BodyContentType: ct,
 				})
 			}
@@ -133,20 +162,26 @@ func callEndpointFull(ctx *cmdctx.Ctx, ep *spec.EndpointSpec, extraQueryParams m
 			if err := json.Unmarshal([]byte(body), &parsed); err != nil {
 				return nil, nil, fmt.Errorf("parsing -f body: %w", err)
 			}
+			inner := parsed
+			if ep.CreateBodyWrap != "" {
+				if wrapped, ok := parsed[ep.CreateBodyWrap].(map[string]any); ok {
+					inner = wrapped
+				}
+			}
 			if len(ep.CreateBodyInit) > 0 {
 				exprEnv := exprenv.Make(ctx)
 				for dotPath, exprStr := range ep.CreateBodyInit {
-					if _, exists := parsed[dotPath]; !exists {
+					if _, exists := inner[dotPath]; !exists {
 						if result, ok := exprenv.EvalExprAny(exprEnv, exprStr); ok && result != nil {
-							setDotPath(parsed, dotPath, result)
+							setDotPath(inner, dotPath, result)
 						}
 					}
 				}
 			}
 			if ep.CreateBodyWrap != "" {
-				return c.Post(path, qp, map[string]any{ep.CreateBodyWrap: parsed})
+				return c.Post(path, qp, map[string]any{ep.CreateBodyWrap: inner})
 			}
-			return c.Post(path, qp, parsed)
+			return c.Post(path, qp, inner)
 		}
 		return c.PostRaw(path, qp, body, ct)
 	}
@@ -559,6 +594,75 @@ func setDotPath(m map[string]any, path string, val any) {
 		m[parts[0]] = child
 	}
 	setDotPath(child, parts[1], val)
+}
+
+// unwrapIfAlreadyWrapped guards against double-wrapping when the -f file is a full
+// Harness Studio YAML export that already has the wrapper key at the top level
+func unwrapIfAlreadyWrapped(parsed any, wrapperKey string) any {
+	m, ok := parsed.(map[string]any)
+	if !ok {
+		return parsed
+	}
+	if wrapped, ok := m[wrapperKey].(map[string]any); ok {
+		return wrapped
+	}
+	return parsed
+}
+
+// envelopeIdentityFields lists the keys lifted from the inner resource object to the
+// top level of a CD-style DTO envelope (see buildYamlEnvelope).
+var envelopeIdentityFields = []string{
+	"identifier", "name", "orgIdentifier", "projectIdentifier",
+	"description", "tags", "type", "environmentRef",
+}
+
+// buildYamlEnvelope wraps a raw -f YAML file into a Harness CD-style DTO envelope:
+// {identifier, name, orgIdentifier, projectIdentifier, ..., yaml: "<full resource yaml>"}.
+func buildYamlEnvelope(ctx *cmdctx.Ctx, wrapperKey, rawBody string) (map[string]any, error) {
+	var parsed map[string]any
+	if err := yaml.Unmarshal([]byte(rawBody), &parsed); err != nil {
+		return nil, fmt.Errorf("parsing -f YAML: %w", err)
+	}
+
+	if _, ok := parsed["yaml"].(string); ok {
+		seedEnvelopeScope(parsed, ctx)
+		return parsed, nil
+	}
+
+	inner := parsed
+	yamlStr := rawBody
+	if wrapped, ok := parsed[wrapperKey].(map[string]any); ok {
+		inner = wrapped
+	} else {
+		b, err := yaml.Marshal(map[string]any{wrapperKey: parsed})
+		if err != nil {
+			return nil, fmt.Errorf("re-wrapping -f YAML under %q: %w", wrapperKey, err)
+		}
+		yamlStr = string(b)
+	}
+
+	env := map[string]any{"yaml": yamlStr}
+	for _, k := range envelopeIdentityFields {
+		if v, ok := inner[k]; ok {
+			env[k] = v
+		}
+	}
+	seedEnvelopeScope(env, ctx)
+	return env, nil
+}
+
+// seedEnvelopeScope defaults orgIdentifier/projectIdentifier on env from ctx.Auth
+// when the -f file did not already specify them.
+func seedEnvelopeScope(env map[string]any, ctx *cmdctx.Ctx) {
+	if ctx.Auth == nil {
+		return
+	}
+	if _, ok := env["orgIdentifier"]; !ok && ctx.Auth.OrgID != "" {
+		env["orgIdentifier"] = ctx.Auth.OrgID
+	}
+	if _, ok := env["projectIdentifier"]; !ok && ctx.Auth.ProjectID != "" {
+		env["projectIdentifier"] = ctx.Auth.ProjectID
+	}
 }
 
 // resolveFileBodyContentType returns the format to validate/normalize the -f file

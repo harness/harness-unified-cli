@@ -335,6 +335,15 @@ type EndpointSpec struct {
 	// FileBodyContentType. Used by APIs that expect { "<key>": "<file contents as a
 	// string>" } (e.g. the v1 template API's template_yaml envelope).
 	FileBodyWrapAsString string `yaml:"file_body_wrap_as_string,omitempty"`
+	// FileBodyYamlEnvelope wraps the -f file into a Harness CD-style DTO envelope:
+	// lifts identity fields (identifier/name/orgIdentifier/projectIdentifier/type/
+	// environmentRef) to the top level and embeds the full resource YAML under a
+	// "yaml" string field. The value is the inner wrapper key (e.g. "service",
+	// "environment", "infrastructureDefinition") used to detect/re-wrap the resource
+	// when the -f file is given in unwrapped or flat form. If the -f file already
+	// has a top-level "yaml" string field, it is passed through as-is (only missing
+	// org/project scope is defaulted).
+	FileBodyYamlEnvelope string `yaml:"file_body_yaml_envelope,omitempty"`
 	// TextFormatter names a registered TextFormatterFn used when --format text.
 	TextFormatter string `yaml:"text_formatter,omitempty"`
 	// TextHeader and TextFooter are optional {{expr}}-interpolated strings printed

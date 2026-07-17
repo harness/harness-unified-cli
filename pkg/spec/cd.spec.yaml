@@ -143,11 +143,12 @@ commands:
   - command: create service
     verb: create
     noun: service
-    short: "Create a service: harness create service <id> -f service.json"
+    short: "Create a service: harness create service <id> -f service.yaml"
     handler_type: endpoint
     endpoint:
       method: POST
       file_body: required
+      file_body_yaml_envelope: service
       path: /ng/api/servicesV2
       item_expr: it.data
       text_header: "\nCreated service {{it.service.identifier}}\n"
@@ -155,7 +156,7 @@ commands:
   - command: update service
     verb: update
     noun: service
-    short: Update a service (name, description, tags)
+    short: Update a service (name, description, tags, or full YAML via -f)
     handler_type: endpoint
     flags_builtin:
       set: true
@@ -163,6 +164,7 @@ commands:
     endpoint:
       method: PUT
       file_body: optional
+      file_body_yaml_envelope: service
       path: /ng/api/servicesV2
       get_path: /ng/api/servicesV2/{{ctx.id}}
       update_strategy: get-then-put
@@ -230,11 +232,12 @@ commands:
   - command: create environment
     verb: create
     noun: environment
-    short: "Create an environment: harness create environment <id> -f environment.json"
+    short: "Create an environment: harness create environment <id> -f environment.yaml"
     handler_type: endpoint
     endpoint:
       method: POST
       file_body: required
+      file_body_yaml_envelope: environment
       path: /ng/api/environmentsV2
       item_expr: it.data
       text_header: "\nCreated environment {{it.environment.identifier}}\n"
@@ -242,7 +245,7 @@ commands:
   - command: update environment
     verb: update
     noun: environment
-    short: Update an environment (name, type, description, tags)
+    short: Update an environment (name, type, description, tags, or full YAML via -f)
     handler_type: endpoint
     flags_builtin:
       set: true
@@ -250,6 +253,7 @@ commands:
     endpoint:
       method: PUT
       file_body: optional
+      file_body_yaml_envelope: environment
       path: /ng/api/environmentsV2
       get_path: /ng/api/environmentsV2/{{ctx.id}}
       update_strategy: get-then-put
@@ -326,11 +330,12 @@ commands:
   - command: create infrastructure
     verb: create
     noun: infrastructure
-    short: "Create an infrastructure: harness create infrastructure <id> -f infrastructure.json"
+    short: "Create an infrastructure: harness create infrastructure <id> -f infrastructure.yaml"
     handler_type: endpoint
     endpoint:
       method: POST
       file_body: required
+      file_body_yaml_envelope: infrastructureDefinition
       path: /ng/api/infrastructures
       item_expr: it.data
       text_header: "\nCreated infrastructure {{it.infrastructure.identifier}}\n"
@@ -338,7 +343,7 @@ commands:
   - command: update infrastructure
     verb: update
     noun: infrastructure
-    short: Update an infrastructure definition
+    short: Update an infrastructure definition (name, description, tags, or full YAML via -f)
     handler_type: endpoint
     flags_builtin:
       set: true
@@ -346,6 +351,7 @@ commands:
     endpoint:
       method: PUT
       file_body: optional
+      file_body_yaml_envelope: infrastructureDefinition
       path: /ng/api/infrastructures
       get_path: /ng/api/infrastructures/{{ctx.id}}
       update_strategy: get-then-put

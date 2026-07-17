@@ -1336,8 +1336,8 @@ commands:
     endpoint:
       method: POST
       path: /ng/api/delegate-token-ng
-      body_params:
-        name: ctx.id
+      query_params:
+        tokenName: ctx.id
       item_expr: it.resource
       text_header: "\nCreated delegate token {{it.name}}\n"
 
