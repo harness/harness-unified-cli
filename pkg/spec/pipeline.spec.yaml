@@ -447,7 +447,7 @@ commands:
       text_footer: "{{url(it)}}\n"
       validators_endpoint: [validate_pipeline_create]
       query_params:
-        storeType: 'flags.connector != "" ? "REMOTE" : ""'
+        storeType: 'flags.repo != "" ? "REMOTE" : ""'
         connectorRef: flags.connector
         repoName: flags.repo
         branch: flags.branch
