@@ -6,6 +6,7 @@ package auth
 import (
 	"context"
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 
@@ -83,6 +84,17 @@ func newWizardStyles() wizardStyles {
 	}
 }
 
+// progHolder is a shared, mutable handle to the running program. The model is
+// copied by value into tea.NewProgram, so a pointer indirection lets the fetch
+// goroutine reach the program that is actually running. Set once, before Run.
+type progHolder struct{ p *tea.Program }
+
+func (h *progHolder) send(msg tea.Msg) {
+	if h != nil && h.p != nil {
+		h.p.Send(msg)
+	}
+}
+
 // --- list item ---
 
 type orgItem struct{ id, name string }
@@ -105,9 +117,23 @@ type orgsDoneMsg struct {
 	err  error
 }
 
+// orgsProgressMsg reports incremental progress while paging through orgs.
+type orgsProgressMsg struct {
+	fetched  int
+	total    int64
+	hasTotal bool
+}
+
 type projectsDoneMsg struct {
 	projects []orgItem
 	err      error
+}
+
+// projectsProgressMsg reports incremental progress while paging through projects.
+type projectsProgressMsg struct {
+	fetched  int
+	total    int64
+	hasTotal bool
 }
 
 // --- model ---
@@ -146,6 +172,17 @@ type wizardModel struct {
 	setMode          bool             // started at org pick; no URL/token steps
 	authType         pkgauth.AuthType // AuthTypePAT or AuthTypeSSO
 
+	// org-load progress (updated via orgsProgressMsg while paging)
+	orgProgFetched  int
+	orgProgTotal    int64
+	orgProgHasTotal bool
+
+	// project-load progress (updated via projectsProgressMsg while paging)
+	projProgFetched  int
+	projProgTotal    int64
+	projProgHasTotal bool
+
+	prog         *progHolder // shared handle so async fetches can Send progress
 	cmdCtx       *cmdctx.Ctx
 	err          string
 	canceled     bool
@@ -378,7 +415,16 @@ func (m wizardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.regURL = msg.regURL
 		m.err = ""
 		m.step = stepOrgLoad
+		m.orgProgFetched = 0
+		m.orgProgTotal = 0
+		m.orgProgHasTotal = false
 		return m, tea.Batch(func() tea.Msg { return m.spin.Tick() }, m.fetchOrgs())
+
+	case orgsProgressMsg:
+		m.orgProgFetched = msg.fetched
+		m.orgProgTotal = msg.total
+		m.orgProgHasTotal = msg.hasTotal
+		return m, nil
 
 	case orgsDoneMsg:
 		if msg.err != nil {
@@ -422,6 +468,12 @@ func (m wizardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		m.step = stepOrgPick
+		return m, nil
+
+	case projectsProgressMsg:
+		m.projProgFetched = msg.fetched
+		m.projProgTotal = msg.total
+		m.projProgHasTotal = msg.hasTotal
 		return m, nil
 
 	case projectsDoneMsg:
@@ -567,6 +619,9 @@ func (m wizardModel) handleEnter() (tea.Model, tea.Cmd) {
 		}
 		m.orgID = sel.id
 		m.step = stepProjectLoad
+		m.projProgFetched = 0
+		m.projProgTotal = 0
+		m.projProgHasTotal = false
 		return m, tea.Batch(func() tea.Msg { return m.spin.Tick() }, m.fetchProjects())
 
 	case stepProjectPick:
@@ -643,10 +698,18 @@ func (m wizardModel) View() tea.View {
 			b.WriteString(st.selected.Render("✓ ") + st.subtle.Render("Token: "+pkgauth.Masked(m.token)) + "\n\n")
 		}
 		if m.step == stepOrgLoad {
-			b.WriteString(m.spin.View() + " Loading organizations…\n")
+			if m.orgProgHasTotal && m.orgProgFetched > 0 {
+				b.WriteString(fmt.Sprintf("%s Loading organizations… (%d of %d)\n", m.spin.View(), m.orgProgFetched, m.orgProgTotal))
+			} else {
+				b.WriteString(m.spin.View() + " Loading organizations…\n")
+			}
 		} else if m.step == stepProjectLoad {
 			b.WriteString(st.selected.Render("✓ ") + st.subtle.Render("Org: "+m.orgID) + "\n\n")
-			b.WriteString(m.spin.View() + " Loading projects…\n")
+			if m.projProgHasTotal && m.projProgFetched > 0 {
+				b.WriteString(fmt.Sprintf("%s Loading projects… (%d of %d)\n", m.spin.View(), m.projProgFetched, m.projProgTotal))
+			} else {
+				b.WriteString(m.spin.View() + " Loading projects…\n")
+			}
 		} else {
 			b.WriteString(st.box.Render(m.orgList.View()) + "\n")
 			escHint := "esc to go back"
@@ -695,8 +758,12 @@ func (m wizardModel) fetchOrgs() tea.Cmd {
 	apiURL := m.apiURL
 	token := m.token
 	accountID := m.accountID
+	prog := m.prog
 	return func() tea.Msg {
-		orgs, err := fetchOrgItems(cmdCtx, apiURL, token, accountID, m.authType)
+		onPage := func(fetched int, total int64, hasTotal bool) {
+			prog.send(orgsProgressMsg{fetched: fetched, total: total, hasTotal: hasTotal})
+		}
+		orgs, err := fetchOrgItems(cmdCtx, apiURL, token, accountID, m.authType, onPage)
 		return orgsDoneMsg{orgs: orgs, err: err}
 	}
 }
@@ -707,15 +774,19 @@ func (m wizardModel) fetchProjects() tea.Cmd {
 	token := m.token
 	accountID := m.accountID
 	orgID := m.orgID
+	prog := m.prog
 	return func() tea.Msg {
-		projects, err := fetchProjectItems(cmdCtx, apiURL, token, accountID, orgID, m.authType)
+		onPage := func(fetched int, total int64, hasTotal bool) {
+			prog.send(projectsProgressMsg{fetched: fetched, total: total, hasTotal: hasTotal})
+		}
+		projects, err := fetchProjectItems(cmdCtx, apiURL, token, accountID, orgID, m.authType, onPage)
 		return projectsDoneMsg{projects: projects, err: err}
 	}
 }
 
 // --- API helpers ---
 
-func fetchOrgItems(ctx *cmdctx.Ctx, apiURL, token, accountID string, authType pkgauth.AuthType) ([]orgItem, error) {
+func fetchOrgItems(ctx *cmdctx.Ctx, apiURL, token, accountID string, authType pkgauth.AuthType, onPage func(int, int64, bool)) ([]orgItem, error) {
 	cs := ctx.Resolver.GetSpec("list", "organization")
 	if cs == nil || cs.Endpoint == nil || cs.Endpoint.Paging == nil {
 		return nil, fmt.Errorf("no spec found for list organization")
@@ -724,14 +795,14 @@ func fetchOrgItems(ctx *cmdctx.Ctx, apiURL, token, accountID string, authType pk
 	fetchCtx.Verb = "list"
 	fetchCtx.Noun = "organization"
 	fetchCtx.Auth = newLoginResolvedAuth(apiURL, token, accountID, "", authType)
-	items, err := ctx.Resolver.FetchItems(&fetchCtx, cs.Endpoint, cmdctx.PagingFlags{All: true})
+	items, err := ctx.Resolver.FetchItems(&fetchCtx, cs.Endpoint, cmdctx.PagingFlags{All: true, OnPage: onPage})
 	if err != nil {
 		return nil, fmt.Errorf("fetching organizations: %w", err)
 	}
 	return orgItemsFromRaw(items, "it.organization.identifier", "it.organization.name")
 }
 
-func fetchProjectItems(ctx *cmdctx.Ctx, apiURL, token, accountID, orgID string, authType pkgauth.AuthType) ([]orgItem, error) {
+func fetchProjectItems(ctx *cmdctx.Ctx, apiURL, token, accountID, orgID string, authType pkgauth.AuthType, onPage func(int, int64, bool)) ([]orgItem, error) {
 	cs := ctx.Resolver.GetSpec("list", "project")
 	if cs == nil || cs.Endpoint == nil || cs.Endpoint.Paging == nil {
 		return nil, fmt.Errorf("no spec found for list project")
@@ -740,7 +811,7 @@ func fetchProjectItems(ctx *cmdctx.Ctx, apiURL, token, accountID, orgID string, 
 	fetchCtx.Verb = "list"
 	fetchCtx.Noun = "project"
 	fetchCtx.Auth = newLoginResolvedAuth(apiURL, token, accountID, orgID, authType)
-	items, err := ctx.Resolver.FetchItems(&fetchCtx, cs.Endpoint, cmdctx.PagingFlags{All: true})
+	items, err := ctx.Resolver.FetchItems(&fetchCtx, cs.Endpoint, cmdctx.PagingFlags{All: true, OnPage: onPage})
 	if err != nil {
 		return nil, fmt.Errorf("fetching projects: %w", err)
 	}
@@ -836,9 +907,12 @@ func validateAndFetch(apiURL, token string) (accountID, regURL string, err error
 func RunLoginWizard(ctx *cmdctx.Ctx, existing *WizardExisting) (*WizardResult, error) {
 	m := newWizardModel(existing)
 	m.cmdCtx = ctx
+	holder := &progHolder{}
+	m.prog = holder
 	prev := hlog.SilenceForTUI()
 	defer hlog.RestoreAfterTUI(prev)
 	p := tea.NewProgram(m)
+	holder.p = p
 	final, err := p.Run()
 	if err != nil {
 		return nil, err
@@ -894,7 +968,20 @@ type SetWizardInput struct {
 // RunSetWizard starts the wizard at the org-pick step using already-validated credentials.
 // Pre-selects the currently saved org and project. Returns (nil, nil) if canceled.
 func RunSetWizard(ctx *cmdctx.Ctx, in *SetWizardInput) (*WizardResult, error) {
-	orgs, err := fetchOrgItems(ctx, in.APIURL, in.Token, in.AccountID, in.AuthType)
+	// Org loading happens before the TUI here, so surface progress as an updating
+	// stderr line (thousands of orgs on some accounts can make this feel like a hang).
+	progressed := false
+	onPage := func(fetched int, total int64, hasTotal bool) {
+		// Only worth showing once we know the total and it spans more than one page.
+		if hasTotal && total > int64(fetched) {
+			fmt.Fprintf(os.Stderr, "\rLoading organizations… (%d of %d)", fetched, total)
+			progressed = true
+		}
+	}
+	orgs, err := fetchOrgItems(ctx, in.APIURL, in.Token, in.AccountID, in.AuthType, onPage)
+	if progressed {
+		fmt.Fprintln(os.Stderr)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -950,9 +1037,12 @@ func RunSetWizard(ctx *cmdctx.Ctx, in *SetWizardInput) (*WizardResult, error) {
 		height:           24,
 	}
 
+	holder := &progHolder{}
+	m.prog = holder
 	prev := hlog.SilenceForTUI()
 	defer hlog.RestoreAfterTUI(prev)
 	p := tea.NewProgram(m)
+	holder.p = p
 	final, err := p.Run()
 	if err != nil {
 		return nil, err

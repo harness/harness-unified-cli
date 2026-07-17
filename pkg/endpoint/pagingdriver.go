@@ -25,15 +25,21 @@ func FetchItems(ctx *cmdctx.Ctx, ep *spec.EndpointSpec, pf cmdctx.PagingFlags) (
 		return nil, nil, fmt.Errorf("offset and limit must be non-negative")
 	}
 	if pf.All {
-		return FetchAll(ctx, ep)
+		return fetchRange(ctx, ep, 0, maxItemsAll, pf.OnPage)
 	}
-	return FetchRange(ctx, ep, pf.Offset, pf.Limit)
+	return fetchRange(ctx, ep, pf.Offset, pf.Limit, pf.OnPage)
 }
 
 // FetchRange fetches items [wantStart, wantStart+wantCount) using the FetchFn
 // resolved from ep. It is strategy-blind: all paging knowledge lives in the FetchFn.
 // If wantCount is 0 it defaults to defaultPageSize.
 func FetchRange(ctx *cmdctx.Ctx, ep *spec.EndpointSpec, wantStart, wantCount int) ([]any, *format.PageMeta, error) {
+	return fetchRange(ctx, ep, wantStart, wantCount, nil)
+}
+
+// fetchRange is the implementation behind FetchRange/FetchAll, with an optional
+// per-page progress callback.
+func fetchRange(ctx *cmdctx.Ctx, ep *spec.EndpointSpec, wantStart, wantCount int, onPage func(int, int64, bool)) ([]any, *format.PageMeta, error) {
 	fn, err := ResolveFetchFn(ctx, ep)
 	if err != nil {
 		return nil, nil, err
@@ -78,6 +84,10 @@ func FetchRange(ctx *cmdctx.Ctx, ep *spec.EndpointSpec, wantStart, wantCount int
 
 		cursor = p.NextCursor
 		pos = pageEnd
+
+		if onPage != nil {
+			onPage(len(out), meta.Total, meta.HasTotal)
+		}
 
 		hlog.Debug("FetchRange page", "noun", ctx.Noun, "start_offset", p.StartOffset, "items", len(p.Items), "last", p.Last, "total_so_far", len(out))
 

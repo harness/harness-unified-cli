@@ -56,6 +56,7 @@ type statusResult struct {
 	RefreshTokenExpiry int64        `json:"RefreshTokenExpiry,omitempty"` // epoch ms; SSO refresh token expiry
 	Status             statusChecks `json:"Status"`
 	CurrentUser        any          `json:"CurrentUser,omitempty"`
+	UserEmail          string       `json:"UserEmail,omitempty"` // SSO: email from JWT claims (no currentUser API call)
 }
 
 const apiTimeout = 5 * time.Second
@@ -142,15 +143,18 @@ func runStatusChecks(profileFlag string) statusResult {
 	}
 	r.Status.Profile = checkResult{OK: true}
 
-	if err := checkAPIUrl(resolved.APIUrl); err != nil {
-		r.Status.API = checkResult{OK: false, Error: err.Error()}
+	// An explicit HARNESS_SSO_BASE_URL override (present during SSO login) means the
+	// non-standard host was deliberate, so a format mismatch is not even a warning.
+	overridden := os.Getenv(hbase.EnvSSOBaseURL) != ""
+	apiCheck := checkAPIUrl(resolved.APIUrl, overridden)
+	r.Status.API = apiCheck
+	if !apiCheck.OK && !apiCheck.Warn {
 		r.Status.User = skip
 		r.Status.Account = skip
 		r.Status.Org = &skip
 		r.Status.Project = &skip
 		return r
 	}
-	r.Status.API = checkResult{OK: true}
 
 	if resolved.AuthType != auth.AuthTypeSSO {
 		if err := auth.ValidatePATFormat(resolved.PATToken); err != nil {
@@ -182,6 +186,7 @@ func runStatusChecks(profileFlag string) statusResult {
 		// For SSO, email comes from JWT claims — parse it from the stored token.
 		if claims, cerr := parseJWT(resolved.SSOToken); cerr == nil {
 			resolvedEmail = claims.Email
+			r.UserEmail = claims.Email
 		}
 		r.Status.User = checkResult{OK: true}
 	} else {
@@ -357,10 +362,11 @@ func printStatus(r statusResult) {
 		if r.Status.User.OK {
 			userVal = r.SATIdentity
 		}
-	} else {
-		if email, uuid := currentUserFields(r.CurrentUser); email != "" {
-			userVal = fmt.Sprintf("%s (%s)", email, uuid)
-		}
+	} else if email, uuid := currentUserFields(r.CurrentUser); email != "" {
+		userVal = fmt.Sprintf("%s (%s)", email, uuid)
+	} else if r.UserEmail != "" {
+		// SSO: no currentUser call — email comes straight from the JWT claims.
+		userVal = r.UserEmail
 	}
 	add(userLabel, sv(r.Status.User, userVal))
 	switch {
@@ -468,19 +474,26 @@ func currentUserFields(u any) (email, uuid string) {
 	return
 }
 
-func checkAPIUrl(apiURL string) error {
-	if err := auth.ValidateAPIURL(apiURL); err != nil {
-		return err
-	}
+// checkAPIUrl validates the API URL's format and reachability. Reachability is the
+// authoritative gate: an unreachable host is a hard failure that cascades. A non-standard
+// but reachable host is a soft warning ("non-standard host") so downstream checks still run —
+// unless overridden is set (an explicit HARNESS_SSO_BASE_URL override), in which case the
+// deliberate host passes cleanly.
+func checkAPIUrl(apiURL string, overridden bool) checkResult {
+	formatErr := auth.ValidateAPIURL(apiURL)
+
 	u, _ := url.Parse(apiURL)
-	_, err := net.DialTimeout("tcp", u.Hostname()+":443", 5*time.Second)
-	if err != nil {
+	if _, err := net.DialTimeout("tcp", u.Hostname()+":443", 5*time.Second); err != nil {
 		if _, ok := errors.AsType[*net.DNSError](err); ok {
-			return fmt.Errorf("cannot resolve host %q — check your API URL", u.Hostname())
+			return checkResult{OK: false, Error: fmt.Sprintf("cannot resolve host %q — check your API URL", u.Hostname())}
 		}
-		return fmt.Errorf("cannot reach %q — %s", u.Hostname(), err)
+		return checkResult{OK: false, Error: fmt.Sprintf("cannot reach %q — %s", u.Hostname(), err)}
 	}
-	return nil
+
+	if formatErr != nil && !overridden {
+		return checkResult{Warn: true, Error: "non-standard host"}
+	}
+	return checkResult{OK: true}
 }
 
 // validateSATToken calls POST /ng/api/token/validate and returns a display identity

@@ -154,6 +154,11 @@ type PagingFlags struct {
 	Limit  int  // max items to return; 0 means use page_size_default
 	All    bool // fetch all pages, overrides Offset and Limit
 	Count  bool // return total count instead of items; incompatible with Offset/Limit/All
+	// OnPage, if set, is invoked once per fetched page with the number of items
+	// accumulated so far and the reported grand total (hasTotal is false when the
+	// paging strategy does not return one). Used to surface progress on slow,
+	// many-page fetches (e.g. thousands of orgs during login).
+	OnPage func(fetched int, total int64, hasTotal bool)
 }
 
 // GlobalFlags is reserved for future non-formatting global flags.

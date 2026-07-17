@@ -246,6 +246,21 @@ commands:
       - name: profile
         description: Profile to inspect (default "default")
 
+  - command: debug sso-log
+    verb: debug
+    noun: sso-log
+    short: Refresh SSO token and emit curl commands for an execution's logs
+    hidden: true
+    no_auth: true
+    requires_id: true
+    id_allow_slash: true
+    id_label: "<[pipeline/]execId>"
+    handler_type: workflow
+    workflow_id: debug_sso_log
+    flags:
+      - name: profile
+        description: Profile to use (default "default")
+
   - command: version
     verb: version
     short: Print the harness CLI version

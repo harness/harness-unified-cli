@@ -102,5 +102,5 @@ var verbRegistry = map[string]VerbSpec{
 	// Group verbs
 	VerbAuth:   {Kind: VerbKindGroup, ShortDesc: "Manage authentication profiles"},
 	VerbPlugin: {Kind: VerbKindGroup, ShortDesc: "Manage CLI plugins"},
-	VerbDebug:  {Kind: VerbKindGroup, HideGroup: true},
+	VerbDebug:  {Kind: VerbKindGroup, HideGroup: true, AllowsId: true},
 }
