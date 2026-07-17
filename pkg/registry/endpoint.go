@@ -90,25 +90,23 @@ func callEndpointFull(ctx *cmdctx.Ctx, ep *spec.EndpointSpec, extraQueryParams m
 				return nil, nil, err
 			}
 			qp := evalQueryParams(ctx, ep.QueryParams, true, extraQueryParams)
+			ct := resolveContentType(ep, method)
 			if err := runEndpointValidators(ctx, ep, cmdctx.EndpointRequest{
 				Method:      method,
 				Path:        path,
 				QueryParams: qp,
 				Body:        env,
-				ContentType: "application/json",
+				ContentType: ct,
 			}); err != nil {
 				return nil, nil, err
 			}
-			if method == "PUT" || method == "PATCH" {
-				return c.DoRequest(client.Request{
-					Method:          method,
-					Path:            path,
-					QueryParams:     qp,
-					Body:            env,
-					BodyContentType: "application/json",
-				})
-			}
-			return c.Post(path, qp, env)
+			return c.DoRequest(client.Request{
+				Method:          method,
+				Path:            path,
+				QueryParams:     qp,
+				Body:            env,
+				BodyContentType: ct,
+			})
 		}
 
 		body, ct, err := cmdctx.NormalizeFileBody(rawBody, resolveFileBodyContentType(ep, method), cmdctx.GetString(ctx.FlagValues, "file"))
