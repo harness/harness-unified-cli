@@ -35,6 +35,18 @@ help_text: |
   `<agent>/<app>`. Use `list gitops_application` to see all applications in the
   current scope and `get gitops_application <agent>/<app>` for full detail.
 
+  A **gitops-cluster** is a Kubernetes cluster registered with a GitOps agent.
+  List with `list gitops_cluster`; get with `get gitops_cluster <agent>/<cluster_id>`.
+
+  A **gitops-repository** is a Git repo configured on a GitOps agent for
+  manifest sources. List with `list gitops_repository`; get with
+  `get gitops_repository <agent>/<repo_id>`.
+
+  A **gitops-application-set** is an Argo CD ApplicationSet that generates
+  multiple applications from a template. List with `list gitops_application_set`;
+  get with `get gitops_application_set <agent>/<uuid>` — use the UUID from list
+  output, not the display name.
+
   ### Nouns
 
   {{nouns}}
@@ -123,6 +135,94 @@ nouns:
         expr: it.app.spec.source.path
       - id: target_revision
         expr: it.app.spec.source.targetRevision
+      - id: created
+        expr: it.createdAt
+      - id: updated
+        expr: it.lastModifiedAt
+
+  - noun: gitops_cluster
+    short_desc: "Harness GitOps clusters — Kubernetes clusters registered with GitOps agents."
+    noun_aliases: [gitops_clusters]
+    multi_level: true
+    fields:
+      - id: identifier
+        expr: it.identifier
+      - id: name
+        expr: it.cluster.name
+      - id: agent
+        expr: it.agentIdentifier
+      - id: server
+        expr: it.cluster.server
+        width_max: 60
+      - id: connection
+        label: Connection
+        expr: it.cluster.connectionState.status
+      - id: org_id
+        expr: it.orgIdentifier
+      - id: project_id
+        expr: it.projectIdentifier
+      - id: created
+        expr: it.createdAt
+      - id: updated
+        expr: it.lastModifiedAt
+
+  - noun: gitops_repository
+    short_desc: "Harness GitOps repositories — Git repos configured on GitOps agents."
+    noun_aliases: [gitops_repositories]
+    multi_level: true
+    fields:
+      - id: identifier
+        expr: it.identifier
+      - id: name
+        expr: 'it.repository.name != "" ? it.repository.name : it.identifier'
+      - id: agent
+        expr: it.agentIdentifier
+      - id: repo_url
+        label: Repo URL
+        expr: it.repository.repo
+        width_max: 60
+      - id: type
+        expr: it.repository.type
+      - id: connection
+        label: Connection
+        expr: it.repository.connectionState.status
+      - id: message
+        label: Message
+        expr: it.repository.connectionState.message ?? ""
+      - id: connection_type
+        label: Connection Type
+        expr: it.repository.connectionType ?? ""
+      - id: org_id
+        expr: it.orgIdentifier
+      - id: project_id
+        expr: it.projectIdentifier
+      - id: created
+        expr: it.createdAt
+      - id: updated
+        expr: it.lastModifiedAt
+
+  - noun: gitops_application_set
+    short_desc: "Harness GitOps ApplicationSets — templates that auto-generate Argo CD applications."
+    noun_aliases: [gitops_application_sets]
+    multi_level: true
+    fields:
+      - id: identifier
+        label: UUID
+        expr: it.identifier
+      - id: name
+        expr: 'it.name ?? (it.applicationset ?? {}).metadata.name'
+      - id: agent
+        expr: it.agentIdentifier
+      - id: project
+        expr: '(it.applicationset ?? {}).spec.template.spec.project'
+      - id: generators
+        label: Generators
+        expr: 'len((it.applicationset ?? {}).spec.generators ?? [])'
+        align: right
+      - id: org_id
+        expr: it.orgIdentifier
+      - id: project_id
+        expr: it.projectIdentifier
       - id: created
         expr: it.createdAt
       - id: updated
@@ -272,3 +372,126 @@ commands:
       path: /gitops/api/v1/agents/{{ctx.idParts[0]}}/applications/{{ctx.idParts[1]}}
       item_expr: it
       fields_subset: [name, agent, cluster, repo, project, namespace, sync_status, health, revision, repo_url, path, target_revision, created, updated]
+
+  - command: list gitops_cluster
+    verb: list
+    noun: gitops_cluster
+    short: "List GitOps clusters in the current scope: harness list gitops_cluster [--search ...] [--agent ...]"
+    handler_type: endpoint
+    flags:
+      - name: search
+        description: Filter clusters by name or keyword
+      - name: agent
+        description: Filter by scope-prefixed GitOps agent identifier
+    endpoint:
+      method: POST
+      path: /gitops/api/v1/clusters
+      items_expr: it.content ?? []
+      get_id_expr: it.agentIdentifier + "/" + it.identifier
+      completion:
+        id_expr: it.agentIdentifier + "/" + it.identifier
+        name_expr: it.cluster.name
+      body_params:
+        accountIdentifier: auth.account
+        orgIdentifier: 'auth.org != "" ? auth.org : nil'
+        projectIdentifier: 'auth.project != "" ? auth.project : nil'
+        pageSize: "1000"
+        searchTerm: 'flags.search != "" ? flags.search : nil'
+        agentIdentifier: 'flags.agent != "" ? flags.agent : nil'
+      paging:
+        paging_strategy: flat_list
+      columns: [identifier, name, agent, server, connection]
+
+  - command: get gitops_cluster
+    verb: get
+    noun: gitops_cluster
+    short: "Get a single GitOps cluster: harness get gitops_cluster <agent/cluster_id>"
+    handler_type: endpoint
+    id_parts: 2
+    id_label: "<agent/cluster_id>"
+    endpoint:
+      path: /gitops/api/v1/agents/{{ctx.idParts[0]}}/clusters/{{ctx.idParts[1]}}
+      item_expr: it
+      fields_subset: [identifier, name, agent, server, connection, org_id, project_id, created, updated]
+
+  - command: list gitops_repository
+    verb: list
+    noun: gitops_repository
+    short: "List GitOps repositories in the current scope: harness list gitops_repository [--search ...] [--agent ...]"
+    handler_type: endpoint
+    flags:
+      - name: search
+        description: Filter repositories by name or URL keyword
+      - name: agent
+        description: Filter by scope-prefixed GitOps agent identifier
+    endpoint:
+      method: POST
+      path: /gitops/api/v1/repositories
+      items_expr: it.content ?? []
+      get_id_expr: it.agentIdentifier + "/" + it.identifier
+      completion:
+        id_expr: it.agentIdentifier + "/" + it.identifier
+        name_expr: 'it.repository.name != "" ? it.repository.name : it.identifier'
+      body_params:
+        accountIdentifier: auth.account
+        orgIdentifier: 'auth.org != "" ? auth.org : nil'
+        projectIdentifier: 'auth.project != "" ? auth.project : nil'
+        pageSize: "1000"
+        searchTerm: 'flags.search != "" ? flags.search : nil'
+        agentIdentifier: 'flags.agent != "" ? flags.agent : nil'
+      paging:
+        paging_strategy: flat_list
+      columns: [identifier, name, agent, repo_url, type, connection]
+
+  - command: get gitops_repository
+    verb: get
+    noun: gitops_repository
+    short: "Get a single GitOps repository: harness get gitops_repository <agent/repo_id>"
+    handler_type: endpoint
+    id_parts: 2
+    id_label: "<agent/repo_id>"
+    endpoint:
+      path: /gitops/api/v1/agents/{{ctx.idParts[0]}}/repositories/{{ctx.idParts[1]}}
+      item_expr: it
+      fields_subset: [identifier, name, agent, repo_url, type, connection, org_id, project_id, created, updated]
+
+  - command: list gitops_application_set
+    verb: list
+    noun: gitops_application_set
+    short: "List GitOps ApplicationSets: harness list gitops_application_set [--search ...] [--agent ...]"
+    handler_type: endpoint
+    flags:
+      - name: search
+        description: Filter ApplicationSets by name or keyword
+      - name: agent
+        description: Filter by scope-prefixed GitOps agent identifier
+    endpoint:
+      method: POST
+      path: /gitops/api/v1/applicationsets
+      items_expr: it.content ?? []
+      get_id_expr: it.agentIdentifier + "/" + it.identifier
+      completion:
+        id_expr: it.agentIdentifier + "/" + it.identifier
+        name_expr: 'it.name ?? (it.applicationset ?? {}).metadata.name'
+      body_params:
+        accountIdentifier: auth.account
+        orgIdentifier: 'auth.org != "" ? auth.org : nil'
+        projectIdentifier: 'auth.project != "" ? auth.project : nil'
+        pageSize: "1000"
+        searchTerm: 'flags.search != "" ? flags.search : nil'
+        agentIdentifier: 'flags.agent != "" ? flags.agent : nil'
+      paging:
+        paging_strategy: flat_list
+      columns: [name, agent, identifier, project, generators]
+
+  - command: get gitops_application_set
+    verb: get
+    noun: gitops_application_set
+    short: "Get a GitOps ApplicationSet by UUID: harness get gitops_application_set <agent/uuid>"
+    handler_type: endpoint
+    id_parts: 2
+    id_label: "<agent/uuid>"
+    endpoint:
+      path: /gitops/api/v1/agents/{{ctx.idParts[0]}}/applicationsets/{{ctx.idParts[1]}}
+      item_expr: it
+      fields_subset: [identifier, name, agent, project, generators, org_id, project_id, created, updated]
