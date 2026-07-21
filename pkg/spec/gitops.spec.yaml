@@ -59,6 +59,11 @@ help_text: |
   A **gitops-repository** is a Git repo configured on a GitOps agent for
   manifest sources. List with `list gitops_repository`; get with
   `get gitops_repository <agent>/<repo_id>`.
+  Register with `create gitops_repository <agent>/<repo_id> -f repo.yaml`.
+  Update with `update gitops_repository <agent>/<repo_id> -f repo.yaml`.
+  Delete with `delete gitops_repository <agent>/<repo_id>`.
+  The `-f` file may contain credentials — protect file permissions and never
+  commit secrets.
 
   A **gitops-application-set** is an Argo CD ApplicationSet that generates
   multiple applications from a template. List with `list gitops_application_set`;
@@ -714,7 +719,82 @@ commands:
     endpoint:
       path: /gitops/api/v1/agents/{{ctx.idParts[0]}}/repositories/{{ctx.idParts[1]}}
       item_expr: it
+      yaml_pick_expr: it.repository
+      yaml_exclude: [connectionState, info, refreshRequestedAt]
       fields_subset: [identifier, name, agent, repo_url, type, connection, org_id, project_id, created, updated]
+
+  - command: create gitops_repository
+    verb: create
+    noun: gitops_repository
+    id_parts: 2
+    id_label: "<agent/repo_id>"
+    short: "Register a Git repo on a GitOps agent: harness create gitops_repository <agent/repo_id> -f repo.yaml [--upsert] [--repo-creds-id <id>]"
+    handler_type: endpoint
+    flags:
+      - name: upsert
+        description: Update existing repository if identifier already exists
+        is_bool: true
+      - name: repo-creds-id
+        description: Link to an existing repository credential set instead of inline credentials in -f
+    endpoint:
+      method: POST
+      path: /gitops/api/v1/agents/{{ctx.idParts[0]}}/repositories
+      file_body: required
+      create_body_wrap: repo
+      query_params:
+        identifier: ctx.idParts[1]
+        orgIdentifier: 'auth.org != "" ? auth.org : nil'
+        projectIdentifier: 'ctx.level == "project" ? (auth.project != "" ? auth.project : nil) : nil'
+        repoCredsId: 'flags["repo-creds-id"] != "" ? flags["repo-creds-id"] : nil'
+      body_params:
+        upsert: 'flags.upsert ? true : nil'
+      item_expr: it
+      fields_subset: [identifier, name, agent, repo_url, type, connection]
+      text_header: "\nCreated gitops repository {{it.agentIdentifier}}/{{it.identifier}}\n\nGet it with: harness get gitops_repository {{it.agentIdentifier}}/{{it.identifier}}\n"
+
+  - command: update gitops_repository
+    verb: update
+    noun: gitops_repository
+    id_parts: 2
+    id_label: "<agent/repo_id>"
+    short: "Update a GitOps repository: harness update gitops_repository <agent/repo_id> -f repo.yaml"
+    handler_type: endpoint
+    endpoint:
+      method: PUT
+      path: /gitops/api/v1/agents/{{ctx.idParts[0]}}/repositories/{{ctx.idParts[1]}}
+      file_body: required
+      update_body_wrap: repo
+      query_params:
+        orgIdentifier: 'auth.org != "" ? auth.org : nil'
+        projectIdentifier: 'ctx.level == "project" ? (auth.project != "" ? auth.project : nil) : nil'
+      item_expr: it
+      fields_subset: [identifier, name, agent, repo_url, type, connection]
+      text_header: "\nUpdated gitops repository {{ctx.id}}\n"
+
+  - command: delete gitops_repository
+    verb: delete
+    noun: gitops_repository
+    id_parts: 2
+    id_label: "<agent/repo_id>"
+    confirm_mode: prompt
+    short: "Delete a GitOps repository: harness delete gitops_repository <agent/repo_id> [--force-delete] [--query-repo <url>]"
+    handler_type: endpoint
+    flags:
+      - name: force-delete
+        description: Force delete even if applications reference this repository
+        is_bool: true
+      - name: query-repo
+        description: Repo URL (when identifier alone is insufficient)
+    endpoint:
+      method: DELETE
+      path: /gitops/api/v1/agents/{{ctx.idParts[0]}}/repositories/{{ctx.idParts[1]}}
+      query_params:
+        orgIdentifier: 'auth.org != "" ? auth.org : nil'
+        projectIdentifier: 'ctx.level == "project" ? (auth.project != "" ? auth.project : nil) : nil'
+        forceDelete: 'flags["force-delete"] ? "true" : nil'
+        query.repo: 'flags["query-repo"] != "" ? flags["query-repo"] : nil'
+      item_expr: it
+      text_header: "\nDeleted gitops repository {{ctx.id}}\n"
 
   - command: list gitops_application_set
     verb: list
