@@ -87,6 +87,51 @@ nfpms:
     license: Apache-2.0
     bindir: /usr/bin
 
+homebrew_casks:
+  # skip_upload: cask files are still built into dist/ so this stays testable, but
+  # nothing is pushed until harness/homebrew-tap exists and HOMEBREW_TAP_GITHUB_TOKEN
+  # is set — see docs/publishing-to-homebrew.md. Remove once both are in place.
+  - name: harness
+    ids: [harness-bundle]
+    binaries: [harness, harness-har]
+    skip_upload: true
+    repository:
+      owner: harness
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    directory: Casks
+    homepage: "https://harness.io"
+    description: "Harness Unified CLI"
+    conflicts:
+      - cask: harness-core
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/harness"]
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/harness-har"]
+          end
+
+  - name: harness-core
+    ids: [harness-core]
+    binaries: [harness]
+    skip_upload: true
+    repository:
+      owner: harness
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    directory: Casks
+    homepage: "https://harness.io"
+    description: "Harness Unified CLI (core only, no plugins)"
+    conflicts:
+      - cask: harness
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/harness"]
+          end
+
 checksum:
   name_template: "{{ .ProjectName }}_{{ .Version }}_checksums.txt"
   algorithm: sha256
