@@ -1,0 +1,932 @@
+spec_version: 1
+module_type: builtin
+module_desc: Harness GitOps — ArgoCD-backed agents, applications, clusters, and repositories
+help_text: |
+  ## GitOps (gitops)
+
+  The GitOps module manages Harness GitOps resources — the ArgoCD-backed
+  agents that run in your clusters and reconcile desired state from Git.
+
+  ### Domain Model
+
+  A **gitops-agent** is the component Harness installs into a Kubernetes
+  cluster to run GitOps reconciliation. Every agent has a scope (account, org,
+  or project), a type (MANAGED_ARGO_PROVIDER, HOSTED_ARGO_PROVIDER, or the
+  deprecated CONNECTED_ARGO_PROVIDER), a health status, and a version. Agents
+  with `upgrade_available: true` are running behind the latest released build.
+
+  Use `list gitops_agent` to see agents in the current scope and
+  `get gitops_agent <identifier>` for the full detail of a single agent.
+
+  Agents at account or org scope are reachable with `--level account` /
+  `--level org`.
+
+  `create gitops_agent` only registers the agent record in Harness (via
+  `--set` flags or `-f agent.yaml`) — it does not install anything into a
+  cluster, and `type` is always MANAGED_ARGO_PROVIDER. Use
+  `execute gitops_agent:install <id>` afterward to fetch the Helm
+  `override.yaml` (or, with `--method yaml`, the plain Kubernetes manifest)
+  and print the `helm`/`kubectl` commands to actually install it — the CLI
+  never runs those commands or touches your cluster itself.
+
+  `delete gitops_agent <id>` removes the Harness agent record only — it does
+  not uninstall cluster resources. Use `confirm_id` (type the agent id to
+  confirm) or `--force` to skip the prompt.
+
+  A **gitops-application** is a deployed unit of desired state — an Argo CD
+  Application that reconciles manifests from a Git source into a target cluster
+  and namespace. Each application belongs to an agent, so its id is compound:
+  `<agent>/<app>`. Use `list gitops_application` to see all applications in the
+  current scope and `get gitops_application <agent>/<app>` for full detail.
+  Create with `create gitops_application <agent> -f app.yaml --cluster <cluster>
+  [--repo <repo>]` — `-f` is the Argo CD Application manifest (metadata + spec);
+  cluster and repo are passed as flags. Sync with
+  `execute gitops_application:sync <agent>/<app> [--revision <sha>] [--prune]
+  [--dry-run]`. Refresh with
+  `execute gitops_application:refresh <agent>/<app> [--hard]`. Update with
+  `update gitops_application <agent>/<app> -f app.yaml` — export first with
+  `get gitops_application <agent>/<app> --yaml -o app.yaml`, edit, then apply.
+  Pass `--cluster` / `--repo` only when changing Harness linkage validation.
+  Delete with `delete gitops_application <agent>/<app>` — use
+  `--propagation-policy foreground|background`, `--no-cascade`, or
+  `--remove-finalizers` for stuck apps.
+  A **gitops-cluster** is a Kubernetes cluster registered with a GitOps agent.
+  List with `list gitops_cluster`; get with `get gitops_cluster <agent>/<cluster_id>`.
+  Register with `create gitops_cluster <agent>/<cluster_id> -f cluster.yaml`.
+  Update with `update gitops_cluster <agent>/<cluster_id> -f cluster.yaml`.
+  Delete with `delete gitops_cluster <agent>/<cluster_id>`.
+
+  A **gitops-repository** is a Git repo configured on a GitOps agent for
+  manifest sources. List with `list gitops_repository`; get with
+  `get gitops_repository <agent>/<repo_id>`.
+  Register with `create gitops_repository <agent>/<repo_id> -f repo.yaml`.
+  Update with `update gitops_repository <agent>/<repo_id> -f repo.yaml`.
+  Delete with `delete gitops_repository <agent>/<repo_id>`.
+  The `-f` file may contain credentials — protect file permissions and never
+  commit secrets.
+
+  A **gitops-application-set** is an Argo CD ApplicationSet that generates
+  multiple applications from a template. List with `list gitops_application_set`;
+  get with `get gitops_application_set <agent>/<uuid>` — use the UUID from list
+  output, not the display name. Create with
+  `create gitops_application_set <agent> -f appset.yaml` (the server assigns
+  the UUID). Update with `update gitops_application_set <agent>/<uuid> -f
+  appset.yaml` — export first with `get gitops_application_set <agent>/<uuid>
+  --yaml -o appset.yaml`, edit, then apply. Delete with
+  `delete gitops_application_set <agent>/<uuid>`.
+
+  ### Nouns
+
+  {{nouns}}
+
+nouns:
+  - noun: gitops_agent
+    short_desc: "Harness GitOps agents — ArgoCD reconcilers running in your clusters."
+    noun_aliases: [gitops_agents]
+    multi_level: true
+    fields:
+      - id: identifier
+        expr: it.identifier
+      - id: name
+        expr: it.name
+        mutable_path: name
+      - id: type
+        expr: it.type
+      - id: scope
+        expr: it.scope
+      - id: health
+        label: Health
+        expr: (it.health.harnessGitopsAgent ?? {})["status"]
+      - id: connected
+        label: Connected
+        expr: it.health.connectionStatus
+      - id: namespace
+        expr: it.metadata.namespace
+        mutable_path: metadata.namespace
+      - id: apps
+        label: Apps
+        expr: it.metadata.deployedApplicationCount
+        align: right
+      - id: version
+        expr: 'it.version == nil ? "" : it.version.major + "." + it.version.minor + "." + it.version.patch'
+      - id: upgrade_available
+        label: Upgrade
+        expr: it.upgradeAvailable
+      - id: description
+        expr: it.description
+        width_max: 60
+        mutable_path: description
+      - id: prefixed_identifier
+        label: Prefixed ID
+        expr: it.prefixedIdentifier
+      - id: last_heartbeat
+        expr: it.health.lastHeartbeat
+      - id: org_id
+        expr: it.orgIdentifier
+      - id: project_id
+        expr: it.projectIdentifier
+      - id: created
+        expr: it.createdAt
+      - id: updated
+        expr: it.lastModifiedAt
+
+  - noun: gitops_application
+    short_desc: "Harness GitOps applications — Argo CD apps reconciling Git state into a cluster."
+    noun_aliases: [gitops_applications]
+    multi_level: true
+    fields:
+      - id: name
+        expr: it.name
+      - id: agent
+        expr: it.agentIdentifier
+      - id: cluster
+        expr: it.clusterIdentifier
+      - id: repo
+        expr: it.repoIdentifier
+      - id: project
+        expr: it.app.spec.project
+      - id: namespace
+        expr: it.app.spec.destination.namespace
+      - id: sync_status
+        label: Sync
+        expr: it.app.status.sync.status
+      - id: health
+        label: Health
+        expr: it.app.status.health.status
+      - id: revision
+        expr: it.app.status.sync.revision
+      - id: repo_url
+        label: Repo URL
+        expr: it.app.spec.source.repoURL
+        width_max: 60
+      - id: path
+        expr: it.app.spec.source.path
+      - id: target_revision
+        expr: it.app.spec.source.targetRevision
+      - id: created
+        expr: it.createdAt ?? it.app.creationTimestampTs
+      - id: updated
+        expr: it.lastModifiedAt ?? it.app.status.operationState.finishedAtTs
+
+  - noun: gitops_cluster
+    short_desc: "Harness GitOps clusters — Kubernetes clusters registered with GitOps agents."
+    noun_aliases: [gitops_clusters]
+    multi_level: true
+    fields:
+      - id: identifier
+        expr: it.identifier
+      - id: name
+        expr: it.cluster.name
+      - id: agent
+        expr: it.agentIdentifier
+      - id: server
+        expr: it.cluster.server
+        width_max: 60
+      - id: connection
+        label: Connection
+        expr: it.cluster.connectionState.status
+      - id: org_id
+        expr: it.orgIdentifier
+      - id: project_id
+        expr: it.projectIdentifier
+      - id: created
+        expr: it.createdAt
+      - id: updated
+        expr: it.lastModifiedAt
+
+  - noun: gitops_repository
+    short_desc: "Harness GitOps repositories — Git repos configured on GitOps agents."
+    noun_aliases: [gitops_repositories]
+    multi_level: true
+    fields:
+      - id: identifier
+        expr: it.identifier
+      - id: name
+        expr: 'it.repository.name != "" ? it.repository.name : it.identifier'
+      - id: agent
+        expr: it.agentIdentifier
+      - id: repo_url
+        label: Repo URL
+        expr: it.repository.repo
+        width_max: 60
+      - id: type
+        expr: it.repository.type
+      - id: connection
+        label: Connection
+        expr: it.repository.connectionState.status
+      - id: message
+        label: Message
+        expr: it.repository.connectionState.message ?? ""
+      - id: connection_type
+        label: Connection Type
+        expr: it.repository.connectionType ?? ""
+      - id: org_id
+        expr: it.orgIdentifier
+      - id: project_id
+        expr: it.projectIdentifier
+      - id: created
+        expr: it.createdAt
+      - id: updated
+        expr: it.lastModifiedAt
+
+  - noun: gitops_application_set
+    short_desc: "Harness GitOps ApplicationSets — templates that auto-generate Argo CD applications."
+    noun_aliases: [gitops_application_sets]
+    multi_level: true
+    fields:
+      - id: identifier
+        label: UUID
+        expr: it.identifier
+      - id: name
+        expr: 'it.name ?? (it.appset ?? it.applicationset ?? {}).metadata.name'
+      - id: agent
+        expr: it.agentIdentifier
+      - id: project
+        expr: '(it.appset ?? it.applicationset ?? {}).spec.template.spec.project'
+      - id: generators
+        label: Generators
+        expr: 'len((it.appset ?? it.applicationset ?? {}).spec.generators ?? [])'
+        align: right
+      - id: org_id
+        expr: it.orgIdentifier
+      - id: project_id
+        expr: it.projectIdentifier
+      - id: created
+        expr: it.createdAt
+      - id: updated
+        expr: it.lastModifiedAt
+
+commands:
+  - command: list gitops_agent
+    verb: list
+    noun: gitops_agent
+    short: "List GitOps agents in the current scope: harness list gitops_agent [--type ...] [--health-status ...]"
+    handler_type: endpoint
+    flags:
+      - name: search
+        description: Filter agents by name or identifier keyword
+      - name: type
+        description: "Filter by agent type"
+        completion_values: [MANAGED_ARGO_PROVIDER, HOSTED_ARGO_PROVIDER, CONNECTED_ARGO_PROVIDER]
+      - name: scope
+        description: "Filter by agent scope"
+        completion_values: [ACCOUNT, ORG, PROJECT]
+      - name: health-status
+        description: "Filter by health status"
+        completion_values: [HEALTHY, UNHEALTHY]
+      - name: connected-status
+        description: "Filter by connectivity status"
+        completion_values: [CONNECTED, DISCONNECTED]
+    endpoint:
+      path: /gitops/api/v1/agents
+      items_expr: it.content
+      get_id_expr: it.identifier
+      completion:
+        id_expr: it.identifier
+        name_expr: it.name
+      query_params:
+        searchTerm: flags.search
+        type: flags.type
+        scope: flags.scope
+        healthStatus: flags.health-status
+        connectedStatus: flags.connected-status
+      paging:
+        paging_strategy: page_index
+        countable: true
+        page_index_param: pageIndex
+        page_size_param: pageSize
+        page_size_default: 100
+        page_size_max: 100
+        total_expr: it.totalItems ?? 0
+      columns: [identifier, name, type, health, namespace, apps, version, upgrade_available]
+
+  - command: get gitops_agent
+    verb: get
+    noun: gitops_agent
+    short: "Get a single GitOps agent by identifier: harness get gitops_agent <identifier>"
+    handler_type: endpoint
+    endpoint:
+      path: /gitops/api/v1/agents/{{ctx.id}}
+      item_expr: it
+      fields_subset: [identifier, name, type, scope, health, connected, namespace, apps, version, upgrade_available, description, prefixed_identifier, last_heartbeat, org_id, project_id, created, updated]
+
+  - command: create gitops_agent
+    verb: create
+    noun: gitops_agent
+    requires_id: true
+    short: "Create a GitOps agent record: harness create gitops_agent <id> --set name=<name> namespace=<k8s-ns>, or -f agent.yaml"
+    flags_builtin:
+      set: true
+    handler_type: endpoint
+    endpoint:
+      method: POST
+      path: /gitops/api/v1/agents
+      file_body: optional
+      create_strategy: set-fields
+      create_body_init:
+        identifier: ctx.id
+        name: coalesce(ctx.setArgs.name, ctx.id)
+        type: '"MANAGED_ARGO_PROVIDER"'
+        accountIdentifier: auth.account
+        orgIdentifier: 'ctx.level == "account" ? nil : (auth.org != "" ? auth.org : nil)'
+        projectIdentifier: 'ctx.level == "project" ? (auth.project != "" ? auth.project : nil) : nil'
+      create_body_wrap: ""
+      item_expr: it
+      text_header: "\nCreated gitops agent {{it.identifier}} (not yet installed in a cluster)\n"
+      text_footer: "Install it later with: harness execute gitops_agent:install {{it.identifier}}\n"
+
+  - command: delete gitops_agent
+    verb: delete
+    noun: gitops_agent
+    confirm_mode: prompt
+    short: "Delete a GitOps agent: harness delete gitops_agent <id>"
+    handler_type: endpoint
+    endpoint:
+      method: DELETE
+      path: /gitops/api/v1/agents/{{ctx.id}}
+      item_expr: it
+      text_header: "\nDeleted gitops agent {{ctx.id}}\n"
+
+  - command: execute gitops_agent:install
+    verb: execute
+    noun: gitops_agent
+    noun_variant: install
+    requires_id: true
+    short: "Fetch install artifacts for a GitOps agent: harness execute gitops_agent:install <id> [-f install.yaml] [--method helm|yaml]"
+    long: |
+      Fetches the Helm chart override values (or, with --method yaml, the plain
+      Kubernetes manifest) needed to install a previously created GitOps agent
+      into a cluster, writes them to a local file, and prints the commands to
+      run. Does not touch your cluster or run helm/kubectl for you.
+
+      Advanced settings (namespace override, skipCrds, proxy, mTLS certs,
+      ArgoCD settings, disaster-recovery id) can be supplied via -f install.yaml.
+      If omitted, the namespace already registered on the agent is used.
+    handler_type: workflow
+    workflow_id: gitops_agent_install
+    flags:
+      - name: file
+        short: f
+        description: "Optional YAML file with install settings (namespace, skipCrds, proxy, privateKey, argocdSettings, disasterRecoveryIdentifier)"
+      - name: method
+        description: "Install method: helm (override.yaml, default) or yaml (kubectl manifest)"
+        completion_values: [helm, yaml]
+      - name: output_file
+        description: "Output file name"
+        required: true
+
+  - command: list gitops_application
+    verb: list
+    noun: gitops_application
+    short: "List GitOps applications in the current scope: harness list gitops_application [--search ...]"
+    handler_type: endpoint
+    flags:
+      - name: search
+        description: Filter applications by name or keyword
+    endpoint:
+      method: POST
+      path: /gitops/api/v1/applications
+      items_expr: it.content ?? []
+      get_id_expr: it.agentIdentifier + "/" + it.name
+      completion:
+        id_expr: it.agentIdentifier + "/" + it.name
+        name_expr: it.name
+      body_params:
+        accountIdentifier: auth.account
+        orgIdentifier: 'auth.org != "" ? auth.org : nil'
+        projectIdentifier: 'auth.project != "" ? auth.project : nil'
+        pageSize: "1000"
+        searchTerm: 'flags.search != "" ? flags.search : nil'
+      paging:
+        paging_strategy: flat_list
+      columns: [name, agent, sync_status, health, namespace, project]
+
+  - command: get gitops_application
+    verb: get
+    noun: gitops_application
+    short: "Get a single GitOps application: harness get gitops_application <agent/app>"
+    handler_type: endpoint
+    id_parts: 2
+    id_label: "<agent/app>"
+    endpoint:
+      path: /gitops/api/v1/agents/{{ctx.idParts[0]}}/applications/{{ctx.idParts[1]}}
+      item_expr: it
+      yaml_pick_expr: it.app
+      yaml_exclude: [status, operation]
+      fields_subset: [name, agent, cluster, repo, project, namespace, sync_status, health, revision, repo_url, path, target_revision, created, updated]
+
+  - command: create gitops_application
+    verb: create
+    noun: gitops_application
+    requires_id: true
+    short: "Create a GitOps application: harness create gitops_application <agent> -f app.yaml --cluster <cluster> [--repo <repo>]"
+    handler_type: endpoint
+    flags:
+      - name: cluster
+        description: "GitOps cluster identifier (required)"
+        required: true
+      - name: repo
+        description: "GitOps repository identifier on the agent"
+      - name: skip-repo-validation
+        description: "Skip repository validation (use instead of --repo when repo is not registered)"
+        is_bool: true
+    endpoint:
+      method: POST
+      path: /gitops/api/v1/agents/{{ctx.id}}/applications
+      file_body: required
+      create_body_wrap: application
+      query_params:
+        orgIdentifier: 'auth.org != "" ? auth.org : nil'
+        projectIdentifier: 'ctx.level == "project" ? (auth.project != "" ? auth.project : nil) : nil'
+        clusterIdentifier: flags.cluster
+        repoIdentifier: 'flags.repo != "" ? flags.repo : nil'
+        skipRepoValidation: 'flags["skip-repo-validation"] ? "true" : nil'
+      item_expr: it
+      text_header: "\nCreated gitops application {{it.name}}\n\nGet it with: harness get gitops_application {{ctx.id}}/{{it.name}}\n"
+
+  - command: update gitops_application
+    verb: update
+    noun: gitops_application
+    id_parts: 2
+    id_label: "<agent/app>"
+    short: "Update a GitOps application: harness update gitops_application <agent/app> -f app.yaml [--cluster <cluster>] [--repo <repo>]"
+    handler_type: endpoint
+    flags:
+      - name: cluster
+        description: "GitOps cluster identifier (when changing cluster/destination binding)"
+      - name: repo
+        description: "GitOps repository identifier on the agent"
+      - name: skip-repo-validation
+        description: "Skip repository validation (use when repo is not registered on the agent)"
+        is_bool: true
+    endpoint:
+      method: PUT
+      path: /gitops/api/v1/agents/{{ctx.idParts[0]}}/applications/{{ctx.idParts[1]}}
+      file_body: required
+      update_body_wrap: application
+      query_params:
+        orgIdentifier: 'auth.org != "" ? auth.org : nil'
+        projectIdentifier: 'ctx.level == "project" ? (auth.project != "" ? auth.project : nil) : nil'
+        clusterIdentifier: 'flags.cluster != "" ? flags.cluster : nil'
+        repoIdentifier: 'flags.repo != "" ? flags.repo : nil'
+        skipRepoValidation: 'flags["skip-repo-validation"] ? "true" : nil'
+      item_expr: it
+      fields_subset: [name, agent, cluster, repo, namespace, sync_status, health, revision, repo_url, path, target_revision]
+      text_header: "\nUpdated gitops application {{ctx.id}}\n"
+
+  - command: delete gitops_application
+    verb: delete
+    noun: gitops_application
+    id_parts: 2
+    id_label: "<agent/app>"
+    confirm_mode: prompt
+    short: "Delete a GitOps application: harness delete gitops_application <agent/app> [--propagation-policy foreground|background] [--no-cascade] [--remove-finalizers] [--app-namespace <ns>]"
+    long: |
+      Deletes an Argo CD Application on the agent. You will be prompted to confirm
+      unless --force is passed.
+      Deletion modes:
+        (default)           Cascade delete using API defaults
+        --propagation-policy foreground   Wait for all K8s child resources to be removed first
+        --propagation-policy background   Remove the Application immediately; K8s cleanup is async
+        --no-cascade                      Remove only the Argo CD Application record; K8s resources stay running
+      Use --remove-finalizers only when the app is stuck and cannot be deleted.
+    handler_type: endpoint
+    flags:
+      - name: propagation-policy
+        description: "Cascade mode: foreground (wait for K8s cleanup) or background (async cleanup)"
+        completion_values: [foreground, background]
+      - name: no-cascade
+        description: Non-cascading delete — remove Argo app record only, leave K8s resources running
+        is_bool: true
+      - name: remove-finalizers
+        description: Strip existing finalizers before deletion (unblocks stuck apps)
+        is_bool: true
+      - name: app-namespace
+        description: Argo CD application namespace override (non-default namespace only)
+    endpoint:
+      method: DELETE
+      path: /gitops/api/v1/agents/{{ctx.idParts[0]}}/applications/{{ctx.idParts[1]}}
+      query_params:
+        orgIdentifier: 'auth.org != "" ? auth.org : nil'
+        projectIdentifier: 'ctx.level == "project" ? (auth.project != "" ? auth.project : nil) : nil'
+        request.cascade: 'flags["no-cascade"] ? "false" : (flags["propagation-policy"] != "" ? "true" : nil)'
+        request.propagationPolicy: 'flags["propagation-policy"] != "" ? flags["propagation-policy"] : nil'
+        request.appNamespace: 'flags["app-namespace"] != "" ? flags["app-namespace"] : nil'
+        options.removeExistingFinalizers: 'flags["remove-finalizers"] ? "true" : nil'
+      item_expr: it
+      fields_subset: [name, agent, namespace, sync_status, health]
+      text_header: "\nDeleted gitops application {{ctx.id}}\n"
+
+
+  - command: execute gitops_application:sync
+    verb: execute
+    noun: gitops_application
+    noun_variant: sync
+    id_parts: 2
+    id_label: "<agent/app>"
+    confirm_mode: prompt
+    short: "Sync a GitOps application: harness execute gitops_application:sync <agent/app> [--revision <sha>] [--prune] [--dry-run]"
+    handler_type: endpoint
+    flags:
+      - name: revision
+        description: Target revision to sync to (commit, branch, or tag)
+      - name: prune
+        description: Delete resources from the cluster that are not in git
+        is_bool: true
+      - name: dry-run
+        description: Simulate sync without applying changes
+        is_bool: true
+    endpoint:
+      method: POST
+      path: /gitops/api/v1/agents/{{ctx.idParts[0]}}/applications/{{ctx.idParts[1]}}/sync
+      body_params:
+        revision: 'flags.revision != "" ? flags.revision : nil'
+        prune: 'flags.prune ? true : nil'
+        dryRun: 'flags["dry-run"] ? true : nil'
+      item_expr: it
+      fields_subset: [name, agent, sync_status, health, revision]
+      text_header: "\nSync triggered for {{ctx.id}}\n"
+
+  - command: execute gitops_application:refresh
+    verb: execute
+    noun: gitops_application
+    noun_variant: refresh
+    id_parts: 2
+    id_label: "<agent/app>"
+    short: "Refresh a GitOps application: harness execute gitops_application:refresh <agent/app> [--hard]"
+    handler_type: endpoint
+    flags:
+      - name: hard
+        description: Hard refresh — invalidate manifest caches and force regeneration
+        is_bool: true
+    endpoint:
+      path: /gitops/api/v1/agents/{{ctx.idParts[0]}}/applications/{{ctx.idParts[1]}}
+      query_params:
+        query.refresh: 'flags.hard ? "hard" : "normal"'
+      item_expr: it
+      fields_subset: [name, agent, sync_status, health, revision]
+      text_header: "\nRefreshed {{ctx.id}}\n"
+
+  - command: list gitops_cluster
+    verb: list
+    noun: gitops_cluster
+    short: "List GitOps clusters in the current scope: harness list gitops_cluster [--search ...] [--agent ...]"
+    handler_type: endpoint
+    flags:
+      - name: search
+        description: Filter clusters by name or keyword
+      - name: agent
+        description: Filter by scope-prefixed GitOps agent identifier
+    endpoint:
+      method: POST
+      path: /gitops/api/v1/clusters
+      items_expr: it.content ?? []
+      get_id_expr: it.agentIdentifier + "/" + it.identifier
+      completion:
+        id_expr: it.agentIdentifier + "/" + it.identifier
+        name_expr: it.cluster.name
+      body_params:
+        accountIdentifier: auth.account
+        orgIdentifier: 'auth.org != "" ? auth.org : nil'
+        projectIdentifier: 'auth.project != "" ? auth.project : nil'
+        pageSize: "1000"
+        searchTerm: 'flags.search != "" ? flags.search : nil'
+        agentIdentifier: 'flags.agent != "" ? flags.agent : nil'
+      paging:
+        paging_strategy: flat_list
+      columns: [identifier, name, agent, server, connection]
+
+  - command: get gitops_cluster
+    verb: get
+    noun: gitops_cluster
+    short: "Get a single GitOps cluster: harness get gitops_cluster <agent/cluster_id>"
+    handler_type: endpoint
+    id_parts: 2
+    id_label: "<agent/cluster_id>"
+    endpoint:
+      path: /gitops/api/v1/agents/{{ctx.idParts[0]}}/clusters/{{ctx.idParts[1]}}
+      item_expr: it
+      yaml_pick_expr: it.cluster
+      yaml_exclude: [connectionState, info, serverVersion, refreshRequestedAt]
+      fields_subset: [identifier, name, agent, server, connection, org_id, project_id, created, updated]
+
+  - command: create gitops_cluster
+    verb: create
+    noun: gitops_cluster
+    id_parts: 2
+    id_label: "<agent/cluster_id>"
+    short: "Register a cluster on a GitOps agent: harness create gitops_cluster <agent/cluster_id> -f cluster.yaml [--upsert]"
+    handler_type: endpoint
+    flags:
+      - name: upsert
+        description: Update existing cluster if identifier already exists
+        is_bool: true
+    endpoint:
+      method: POST
+      path: /gitops/api/v1/agents/{{ctx.idParts[0]}}/clusters
+      file_body: required
+      create_body_wrap: cluster
+      query_params:
+        identifier: ctx.idParts[1]
+        orgIdentifier: 'auth.org != "" ? auth.org : nil'
+        projectIdentifier: 'ctx.level == "project" ? (auth.project != "" ? auth.project : nil) : nil'
+      body_params:
+        upsert: 'flags.upsert ? true : nil'
+      item_expr: it
+      fields_subset: [identifier, name, agent, server, connection]
+      text_header: "\nCreated gitops cluster {{it.agentIdentifier}}/{{it.identifier}}\n\nGet it with: harness get gitops_cluster {{it.agentIdentifier}}/{{it.identifier}}\n"
+
+  - command: update gitops_cluster
+    verb: update
+    noun: gitops_cluster
+    id_parts: 2
+    id_label: "<agent/cluster_id>"
+    short: "Update a GitOps cluster: harness update gitops_cluster <agent/cluster_id> -f cluster.yaml [--force-update]"
+    handler_type: endpoint
+    flags:
+      - name: force-update
+        description: Force update even when server-side validation would reject changes
+        is_bool: true
+    endpoint:
+      method: PUT
+      path: /gitops/api/v1/agents/{{ctx.idParts[0]}}/clusters/{{ctx.idParts[1]}}
+      file_body: required
+      update_body_wrap: cluster
+      query_params:
+        orgIdentifier: 'auth.org != "" ? auth.org : nil'
+        projectIdentifier: 'ctx.level == "project" ? (auth.project != "" ? auth.project : nil) : nil'
+        forceUpdate: 'flags["force-update"] ? "true" : nil'
+      item_expr: it
+      fields_subset: [identifier, name, agent, server, connection]
+      text_header: "\nUpdated gitops cluster {{ctx.id}}\n"
+
+  - command: delete gitops_cluster
+    verb: delete
+    noun: gitops_cluster
+    id_parts: 2
+    id_label: "<agent/cluster_id>"
+    confirm_mode: prompt
+    short: "Delete a GitOps cluster: harness delete gitops_cluster <agent/cluster_id> [--force-delete] [--query-name <argo_name>]"
+    handler_type: endpoint
+    flags:
+      - name: force-delete
+        description: Delete even if applications are still deployed on the cluster
+        is_bool: true
+      - name: query-name
+        description: Argo CD cluster display name (required if cluster was renamed from its Harness identifier)
+    endpoint:
+      method: DELETE
+      path: /gitops/api/v1/agents/{{ctx.idParts[0]}}/clusters/{{ctx.idParts[1]}}
+      query_params:
+        orgIdentifier: 'auth.org != "" ? auth.org : nil'
+        projectIdentifier: 'ctx.level == "project" ? (auth.project != "" ? auth.project : nil) : nil'
+        forceDelete: 'flags["force-delete"] ? "true" : nil'
+        query.name: 'flags["query-name"] != "" ? flags["query-name"] : nil'
+      item_expr: it
+      text_header: "\nDeleted gitops cluster {{ctx.id}}\n"
+
+  - command: list gitops_repository
+    verb: list
+    noun: gitops_repository
+    short: "List GitOps repositories in the current scope: harness list gitops_repository [--search ...] [--agent ...]"
+    handler_type: endpoint
+    flags:
+      - name: search
+        description: Filter repositories by name or URL keyword
+      - name: agent
+        description: Filter by scope-prefixed GitOps agent identifier
+    endpoint:
+      method: POST
+      path: /gitops/api/v1/repositories
+      items_expr: it.content ?? []
+      get_id_expr: it.agentIdentifier + "/" + it.identifier
+      completion:
+        id_expr: it.agentIdentifier + "/" + it.identifier
+        name_expr: 'it.repository.name != "" ? it.repository.name : it.identifier'
+      body_params:
+        accountIdentifier: auth.account
+        orgIdentifier: 'auth.org != "" ? auth.org : nil'
+        projectIdentifier: 'auth.project != "" ? auth.project : nil'
+        pageSize: "1000"
+        searchTerm: 'flags.search != "" ? flags.search : nil'
+        agentIdentifier: 'flags.agent != "" ? flags.agent : nil'
+      paging:
+        paging_strategy: flat_list
+      columns: [identifier, name, agent, repo_url, type, connection]
+
+  - command: get gitops_repository
+    verb: get
+    noun: gitops_repository
+    short: "Get a single GitOps repository: harness get gitops_repository <agent/repo_id>"
+    handler_type: endpoint
+    id_parts: 2
+    id_label: "<agent/repo_id>"
+    endpoint:
+      path: /gitops/api/v1/agents/{{ctx.idParts[0]}}/repositories/{{ctx.idParts[1]}}
+      item_expr: it
+      yaml_pick_expr: it.repository
+      yaml_exclude: [connectionState, info, refreshRequestedAt]
+      fields_subset: [identifier, name, agent, repo_url, type, connection, org_id, project_id, created, updated]
+
+  - command: create gitops_repository
+    verb: create
+    noun: gitops_repository
+    id_parts: 2
+    id_label: "<agent/repo_id>"
+    short: "Register a Git repo on a GitOps agent: harness create gitops_repository <agent/repo_id> -f repo.yaml [--upsert] [--repo-creds-id <id>]"
+    handler_type: endpoint
+    flags:
+      - name: upsert
+        description: Update existing repository if identifier already exists
+        is_bool: true
+      - name: repo-creds-id
+        description: Link to an existing repository credential set instead of inline credentials in -f
+    endpoint:
+      method: POST
+      path: /gitops/api/v1/agents/{{ctx.idParts[0]}}/repositories
+      file_body: required
+      create_body_wrap: repo
+      query_params:
+        identifier: ctx.idParts[1]
+        orgIdentifier: 'auth.org != "" ? auth.org : nil'
+        projectIdentifier: 'ctx.level == "project" ? (auth.project != "" ? auth.project : nil) : nil'
+        repoCredsId: 'flags["repo-creds-id"] != "" ? flags["repo-creds-id"] : nil'
+      body_params:
+        upsert: 'flags.upsert ? true : nil'
+      item_expr: it
+      fields_subset: [identifier, name, agent, repo_url, type, connection]
+      text_header: "\nCreated gitops repository {{it.agentIdentifier}}/{{it.identifier}}\n\nGet it with: harness get gitops_repository {{it.agentIdentifier}}/{{it.identifier}}\n"
+
+  - command: update gitops_repository
+    verb: update
+    noun: gitops_repository
+    id_parts: 2
+    id_label: "<agent/repo_id>"
+    short: "Update a GitOps repository: harness update gitops_repository <agent/repo_id> -f repo.yaml"
+    handler_type: endpoint
+    endpoint:
+      method: PUT
+      path: /gitops/api/v1/agents/{{ctx.idParts[0]}}/repositories/{{ctx.idParts[1]}}
+      file_body: required
+      update_body_wrap: repo
+      query_params:
+        orgIdentifier: 'auth.org != "" ? auth.org : nil'
+        projectIdentifier: 'ctx.level == "project" ? (auth.project != "" ? auth.project : nil) : nil'
+      item_expr: it
+      fields_subset: [identifier, name, agent, repo_url, type, connection]
+      text_header: "\nUpdated gitops repository {{ctx.id}}\n"
+
+  - command: delete gitops_repository
+    verb: delete
+    noun: gitops_repository
+    id_parts: 2
+    id_label: "<agent/repo_id>"
+    confirm_mode: prompt
+    short: "Delete a GitOps repository: harness delete gitops_repository <agent/repo_id> [--force-delete] [--query-repo <url>]"
+    handler_type: endpoint
+    flags:
+      - name: force-delete
+        description: Force delete even if applications reference this repository
+        is_bool: true
+      - name: query-repo
+        description: Repo URL (when identifier alone is insufficient)
+    endpoint:
+      method: DELETE
+      path: /gitops/api/v1/agents/{{ctx.idParts[0]}}/repositories/{{ctx.idParts[1]}}
+      query_params:
+        orgIdentifier: 'auth.org != "" ? auth.org : nil'
+        projectIdentifier: 'ctx.level == "project" ? (auth.project != "" ? auth.project : nil) : nil'
+        forceDelete: 'flags["force-delete"] ? "true" : nil'
+        query.repo: 'flags["query-repo"] != "" ? flags["query-repo"] : nil'
+      item_expr: it
+      text_header: "\nDeleted gitops repository {{ctx.id}}\n"
+
+  - command: list gitops_application_set
+    verb: list
+    noun: gitops_application_set
+    short: "List GitOps ApplicationSets: harness list gitops_application_set [--search ...] [--agent ...]"
+    handler_type: endpoint
+    flags:
+      - name: search
+        description: Filter ApplicationSets by name or keyword
+      - name: agent
+        description: Filter by scope-prefixed GitOps agent identifier
+    endpoint:
+      method: POST
+      path: /gitops/api/v1/applicationsets
+      items_expr: it.content ?? []
+      get_id_expr: it.agentIdentifier + "/" + it.identifier
+      completion:
+        id_expr: it.agentIdentifier + "/" + it.identifier
+        name_expr: 'it.name ?? (it.appset ?? it.applicationset ?? {}).metadata.name'
+      body_params:
+        accountIdentifier: auth.account
+        orgIdentifier: 'auth.org != "" ? auth.org : nil'
+        projectIdentifier: 'auth.project != "" ? auth.project : nil'
+        pageSize: "1000"
+        searchTerm: 'flags.search != "" ? flags.search : nil'
+        agentIdentifier: 'flags.agent != "" ? flags.agent : nil'
+      paging:
+        paging_strategy: flat_list
+      columns: [name, agent, identifier, project, generators]
+
+  - command: get gitops_application_set
+    verb: get
+    noun: gitops_application_set
+    short: "Get a GitOps ApplicationSet by UUID: harness get gitops_application_set <agent/uuid>"
+    handler_type: endpoint
+    id_parts: 2
+    id_label: "<agent/uuid>"
+    endpoint:
+      path: /gitops/api/v1/applicationset/{{ctx.idParts[1]}}
+      query_params:
+        agentIdentifier: ctx.idParts[0]
+        orgIdentifier: 'auth.org != "" ? auth.org : nil'
+        projectIdentifier: 'ctx.level == "project" ? (auth.project != "" ? auth.project : nil) : nil'
+      item_expr: it
+      yaml_pick_expr: it.appset ?? it.applicationset
+      yaml_exclude: [status]
+      fields_subset: [identifier, name, agent, project, generators, org_id, project_id, created, updated]
+
+  - command: create gitops_application_set
+    verb: create
+    noun: gitops_application_set
+    requires_id: true
+    short: "Create a GitOps ApplicationSet: harness create gitops_application_set <agent> -f appset.yaml [--upsert] [--dry-run]"
+    handler_type: endpoint
+    flags:
+      - name: upsert
+        description: Update existing ApplicationSet if one with the same name already exists
+        is_bool: true
+      - name: dry-run
+        description: Validate the manifest without persisting changes
+        is_bool: true
+    endpoint:
+      method: POST
+      path: /gitops/api/v1/applicationset
+      file_body: required
+      create_body_wrap: applicationset
+      query_params:
+        agentIdentifier: ctx.id
+        orgIdentifier: 'auth.org != "" ? auth.org : nil'
+        projectIdentifier: 'ctx.level == "project" ? (auth.project != "" ? auth.project : nil) : nil'
+      body_params:
+        upsert: 'flags.upsert ? true : nil'
+        dryRun: 'flags["dry-run"] ? true : nil'
+      item_expr: it
+      fields_subset: [identifier, name, agent, project, generators]
+      text_header: "\nCreated gitops application set {{it.name}}\n\nGet it with: harness get gitops_application_set {{ctx.id}}/{{it.identifier}}\n"
+
+  - command: update gitops_application_set
+    verb: update
+    noun: gitops_application_set
+    id_parts: 2
+    id_label: "<agent/uuid>"
+    short: "Update a GitOps ApplicationSet: harness update gitops_application_set <agent/uuid> -f appset.yaml [--upsert] [--dry-run]"
+    long: |
+      Updates an ApplicationSet from an Argo CD manifest file. Export the current
+      manifest first with `get gitops_application_set <agent>/<uuid> --yaml -o
+      appset.yaml`, edit the file, then apply. Edit spec/generators/template only;
+      do not strip metadata fields the API may require on PUT.
+    handler_type: endpoint
+    flags:
+      - name: upsert
+        description: Create the ApplicationSet if it does not exist
+        is_bool: true
+      - name: dry-run
+        description: Validate the manifest without persisting changes
+        is_bool: true
+    endpoint:
+      method: PUT
+      path: /gitops/api/v1/applicationset
+      file_body: required
+      update_body_wrap: applicationset
+      query_params:
+        agentIdentifier: ctx.idParts[0]
+        orgIdentifier: 'auth.org != "" ? auth.org : nil'
+        projectIdentifier: 'ctx.level == "project" ? (auth.project != "" ? auth.project : nil) : nil'
+      body_params:
+        upsert: 'flags.upsert ? true : nil'
+        dryRun: 'flags["dry-run"] ? true : nil'
+      item_expr: it
+      fields_subset: [identifier, name, agent, project, generators]
+      text_header: "\nUpdated gitops application set {{ctx.id}}\n"
+
+  - command: delete gitops_application_set
+    verb: delete
+    noun: gitops_application_set
+    id_parts: 2
+    id_label: "<agent/uuid>"
+    confirm_mode: prompt
+    short: "Delete a GitOps ApplicationSet: harness delete gitops_application_set <agent/uuid>"
+    handler_type: endpoint
+    endpoint:
+      method: DELETE
+      path: /gitops/api/v1/applicationset/{{ctx.idParts[1]}}
+      query_params:
+        agentIdentifier: ctx.idParts[0]
+        orgIdentifier: 'auth.org != "" ? auth.org : nil'
+        projectIdentifier: 'ctx.level == "project" ? (auth.project != "" ? auth.project : nil) : nil'
+      item_expr: it
+      fields_subset: [identifier, name, agent, project, generators]
+      text_header: "\nDeleted gitops application set {{ctx.id}}\n"
