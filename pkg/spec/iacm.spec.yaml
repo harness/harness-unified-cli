@@ -224,7 +224,6 @@ commands:
         harness execute workspace --target aws_instance.web # limit plan to one resource
         harness execute workspace --force                   # skip confirmation prompt
     id_label: "<workspace-id>"
-    no_id: true
     completion_noun: workspace
     handler_type: workflow
     workflow_id: execute_workspace
